@@ -1,0 +1,206 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Team {
+  id               String   @id @default(uuid())
+  name             String
+  waPhoneNumberId  String?
+  waAccessToken    String?
+  waWebhookSecret  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  users           User[]
+  contacts        Contact[]
+  conversations   Conversation[]
+  templates       Template[]
+  broadcasts      Broadcast[]
+  automations     Automation[]
+  labels          Label[]
+  cannedResponses CannedResponse[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("agent") // admin, agent, supervisor
+  avatar    String?
+  status    String   @default("online") // online, offline, busy
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignedConversations Conversation[] @relation("AssignedTo")
+  messages              Message[]
+  notes                 Note[]
+}
+
+model Contact {
+  id           String   @id @default(uuid())
+  phone        String
+  name         String?
+  email        String?
+  avatar       String?
+  tags         String   @default("[]") // JSON array stored as string
+  customFields String   @default("{}") // JSON object
+  teamId       String
+  team         Team     @relation(fields: [teamId], references: [id])
+  blocked      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  conversations     Conversation[]
+  broadcastContacts BroadcastContact[]
+
+  @@unique([phone, teamId])
+}
+
+model Label {
+  id        String   @id @default(uuid())
+  name      String
+  color     String   @default("#6366f1")
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id])
+  createdAt DateTime @default(now())
+
+  conversations ConversationLabel[]
+}
+
+model Conversation {
+  id           String    @id @default(uuid())
+  teamId       String
+  team         Team      @relation(fields: [teamId], references: [id])
+  contactId    String
+  contact      Contact   @relation(fields: [contactId], references: [id])
+  assignedToId String?
+  assignedTo   User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
+  status       String    @default("open") // open, resolved, pending, snoozed
+  lastMessageAt DateTime?
+  unreadCount  Int       @default(0)
+  channel      String    @default("whatsapp")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  messages Message[]
+  notes    Note[]
+  labels   ConversationLabel[]
+}
+
+model ConversationLabel {
+  conversationId String
+  labelId        String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  label          Label        @relation(fields: [labelId], references: [id])
+
+  @@id([conversationId, labelId])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  fromType       String   // contact, agent, bot, system
+  fromId         String?
+  agent          User?    @relation(fields: [fromId], references: [id])
+  type           String   @default("text") // text, image, audio, video, file, template, location, sticker
+  content        String?
+  mediaUrl       String?
+  mediaName      String?
+  mediaMimeType  String?
+  templateName   String?
+  status         String   @default("sent") // sent, delivered, read, failed
+  waMessageId    String?
+  metadata       String   @default("{}") // JSON
+  createdAt      DateTime @default(now())
+}
+
+model Note {
+  id             String   @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  content        String
+  createdAt      DateTime @default(now())
+}
+
+model Template {
+  id           String   @id @default(uuid())
+  teamId       String
+  team         Team     @relation(fields: [teamId], references: [id])
+  name         String
+  category     String   // MARKETING, UTILITY, AUTHENTICATION
+  language     String   @default("en")
+  status       String   @default("pending") // pending, approved, rejected
+  headerType   String?  // TEXT, IMAGE, VIDEO, DOCUMENT
+  headerValue  String?
+  body         String
+  footer       String?
+  buttons      String   @default("[]") // JSON array
+  waTemplateId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Broadcast {
+  id             String    @id @default(uuid())
+  teamId         String
+  team           Team      @relation(fields: [teamId], references: [id])
+  name           String
+  templateId     String?
+  message        String?
+  status         String    @default("draft") // draft, scheduled, running, completed, failed
+  scheduledAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  totalCount     Int       @default(0)
+  sentCount      Int       @default(0)
+  deliveredCount Int       @default(0)
+  failedCount    Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  contacts BroadcastContact[]
+}
+
+model BroadcastContact {
+  id          String    @id @default(uuid())
+  broadcastId String
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id])
+  contactId   String
+  contact     Contact   @relation(fields: [contactId], references: [id])
+  status      String    @default("pending") // pending, sent, delivered, failed
+  sentAt      DateTime?
+  error       String?
+}
+
+model Automation {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id])
+  name      String
+  isActive  Boolean  @default(true)
+  trigger   String   // JSON: { type: "keyword"|"new_conversation"|"no_reply"|"label_added", value: string }
+  actions   String   // JSON array: [{ type: "send_message"|"assign_to"|"add_label"|"resolve"|"send_template", value: any }]
+  runCount  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CannedResponse {
+  id        String   @id @default(uuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id])
+  shortcut  String
+  content   String
+  createdAt DateTime @default(now())
+}
