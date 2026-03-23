@@ -16,6 +16,7 @@ import {
   Copy,
   Wifi,
   X,
+  AlertTriangle,
 } from 'lucide-react'
 import { teamApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -62,6 +63,7 @@ export default function SettingsPage() {
   const [showAgentDialog, setShowAgentDialog] = useState(false)
   const [agentForm, setAgentForm] = useState({ email: '', name: '', role: 'agent' })
   const [isInviting, setIsInviting] = useState(false)
+  const [inviteResult, setInviteResult] = useState<{ email: string; tempPassword: string } | null>(null)
 
   // Label dialog
   const [showLabelDialog, setShowLabelDialog] = useState(false)
@@ -119,8 +121,8 @@ export default function SettingsPage() {
       const response = await teamApi.inviteAgent(agentForm)
       const agent = response.data.agent || response.data
       addAgent(agent)
-      toast({ title: 'Agent invited' })
       setShowAgentDialog(false)
+      setInviteResult({ email: agentForm.email, tempPassword: response.data.tempPassword })
       setAgentForm({ email: '', name: '', role: 'agent' })
     } catch (error: any) {
       toast({
@@ -595,6 +597,41 @@ export default function SettingsPage() {
             <Button onClick={handleInviteAgent} disabled={isInviting}>
               {isInviting ? 'Inviting...' : 'Invite'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Result Dialog */}
+      <Dialog open={!!inviteResult} onOpenChange={(open) => { if (!open) setInviteResult(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Agent Invited</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-gray-600">
+              An account has been created for <span className="font-medium">{inviteResult?.email}</span>. Share the temporary password below with the agent.
+            </p>
+            <div>
+              <Label>Temporary Password</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <Input value={inviteResult?.tempPassword ?? ''} readOnly className="font-mono bg-gray-50" />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 flex-shrink-0"
+                  onClick={() => copyToClipboard(inviteResult?.tempPassword ?? '')}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">This password will not be shown again. Make sure to copy it before closing this dialog.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setInviteResult(null)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
