@@ -73,9 +73,21 @@ app.use('/api/team', teamRoutes);
 app.use('/', webhookRoutes);
 
 // Health check
+
+// Uncomment this simpler version if you want a more basic health check without version info
+
+// app.get('/health', (_req: Request, res: Response) => {
+//   res.json({
+//     status: 'ok',
+//     timestamp: new Date().toISOString(),
+//     env: process.env.NODE_ENV || 'development',
+//   });
+// });
+
 app.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
+    version: '1.0.1',
     timestamp: new Date().toISOString(),
     env: process.env.NODE_ENV || 'development',
   });
