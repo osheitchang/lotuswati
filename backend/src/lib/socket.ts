@@ -1,6 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { env } from './env';
 
 interface AuthPayload {
   id: string;
@@ -36,8 +37,7 @@ function initSocket(httpServer: HttpServer): Server {
     }
 
     try {
-      const jwtSecret = process.env.JWT_SECRET || 'lotuswati-super-secret-key-change-in-production';
-      const decoded = jwt.verify(token, jwtSecret) as AuthPayload;
+      const decoded = jwt.verify(token, env.JWT_SECRET) as AuthPayload;
       socket.user = decoded;
       next();
     } catch (err) {

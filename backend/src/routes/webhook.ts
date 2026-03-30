@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma';
+import { env } from '../lib/env';
 import {
   verifyWebhookSignature,
   parseIncomingMessage,
@@ -8,6 +9,7 @@ import {
 } from '../services/whatsapp';
 import { processAutomations } from '../services/automation';
 import { getIO } from '../lib/socket';
+import { r2Enabled, downloadWhatsAppMedia, uploadMedia } from '../services/storage';
 
 const router = Router();
 
@@ -19,9 +21,7 @@ router.get('/webhook', (req: Request, res: Response) => {
 
   console.log(`[Webhook] Verification request: mode=${mode}, token=${token}`);
 
-  const verifyToken = process.env.WA_VERIFY_TOKEN || 'lotuswati-webhook-verify-token';
-
-  if (mode === 'subscribe' && token === verifyToken) {
+  if (mode === 'subscribe' && token === env.WA_VERIFY_TOKEN) {
     console.log('[Webhook] Verification successful');
     return res.status(200).send(challenge);
   }
@@ -286,6 +286,25 @@ async function processMessage(
       messageType = 'text';
   }
 
+  // Resolve media URL — upload to R2 if configured, otherwise fall back to a placeholder
+  const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
+  let mediaUrl: string | undefined;
+
+  if (mediaId && MEDIA_TYPES.includes(type)) {
+    if (r2Enabled) {
+      try {
+        const { buffer, mimeType: dlMimeType, filename } = await downloadWhatsAppMedia(mediaId);
+        mediaUrl = await uploadMedia(buffer, filename, dlMimeType);
+        console.log(`[Webhook] Uploaded media ${mediaId} → ${mediaUrl}`);
+      } catch (err) {
+        console.error('[Webhook] Media upload failed, falling back to placeholder:', err);
+        mediaUrl = `https://media.whatsapp.net/${mediaId}`;
+      }
+    } else {
+      mediaUrl = `https://media.whatsapp.net/${mediaId}`;
+    }
+  }
+
   // Create the message
   const message = await prisma.message.create({
     data: {
@@ -293,7 +312,7 @@ async function processMessage(
       fromType: 'contact',
       type: messageType,
       content,
-      mediaUrl: mediaId ? `https://media.whatsapp.net/${mediaId}` : undefined,
+      mediaUrl,
       mediaMimeType,
       status: 'delivered',
       waMessageId,
