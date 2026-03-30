@@ -531,9 +531,7 @@ async function main() {
   // ─── Summary ──────────────────────────────────────────────────────────────
   console.log('\n✨ Seed complete!\n');
   console.log('─────────────────────────────────────');
-  console.log('Demo Credentials:');
-  console.log('  Admin: admin@demo.com / demo1234');
-  console.log('  Agent: agent@demo.com / demo1234');
+  console.log('Seeded users created (admin + agent).');
   console.log('─────────────────────────────────────');
   console.log(`Team ID: ${team.id}`);
   console.log(`Contacts: ${contacts.length}`);

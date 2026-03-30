@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { env } from '../config/env';
 
 export interface AuthUser {
   id: string;
@@ -33,8 +34,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
   const token = parts[1];
 
   try {
-    const jwtSecret = process.env.JWT_SECRET || 'lotuswati-super-secret-key-change-in-production';
-    const decoded = jwt.verify(token, jwtSecret) as AuthUser;
+    const decoded = jwt.verify(token, env.JWT_SECRET) as AuthUser;
     req.user = decoded;
     next();
   } catch (err) {

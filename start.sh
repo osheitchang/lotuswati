@@ -20,7 +20,6 @@ echo ""
 echo "✅ LotusWati is running!"
 echo "   Frontend: http://localhost:3000"
 echo "   Backend:  http://localhost:3001"
-echo "   Login:    admin@demo.com / demo1234"
 echo ""
 echo "Press Ctrl+C to stop both servers."
 

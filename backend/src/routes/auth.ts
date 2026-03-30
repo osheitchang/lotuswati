@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import prisma from '../lib/prisma';
 import { authenticate } from '../middleware/auth';
+import { env } from '../config/env';
 
 const router = Router();
 
@@ -20,8 +21,7 @@ const loginSchema = z.object({
 });
 
 function generateToken(payload: { id: string; email: string; teamId: string; role: string }): string {
-  const jwtSecret = process.env.JWT_SECRET || 'lotuswati-super-secret-key-change-in-production';
-  return jwt.sign(payload, jwtSecret, { expiresIn: '7d' });
+  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: '7d' });
 }
 
 // POST /api/auth/register

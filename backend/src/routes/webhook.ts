@@ -8,6 +8,7 @@ import {
 } from '../services/whatsapp';
 import { processAutomations } from '../services/automation';
 import { getIO } from '../lib/socket';
+import { env } from '../config/env';
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.get('/webhook', (req: Request, res: Response) => {
 
   console.log(`[Webhook] Verification request: mode=${mode}, token=${token}`);
 
-  const verifyToken = process.env.WA_VERIFY_TOKEN || 'lotuswati-webhook-verify-token';
+  const verifyToken = env.WA_VERIFY_TOKEN;
 
   if (mode === 'subscribe' && token === verifyToken) {
     console.log('[Webhook] Verification successful');

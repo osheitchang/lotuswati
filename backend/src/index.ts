@@ -3,6 +3,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
 import { initSocket } from './lib/socket';
+import { env } from './config/env';
+import { createRateLimiter, securityHeaders } from './middleware/security';
 
 // Route imports
 import authRoutes from './routes/auth';
@@ -22,16 +24,32 @@ const httpServer = createServer(app);
 initSocket(httpServer);
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
+app.set('trust proxy', 1);
+
+app.use(securityHeaders);
+
+const apiRateLimit = createRateLimiter({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  max: env.RATE_LIMIT_MAX_REQUESTS,
+});
+
+const authRateLimit = createRateLimiter({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  max: env.AUTH_RATE_LIMIT_MAX_REQUESTS,
+  message: 'Too many auth requests, please try again later.',
+});
 
 // CORS
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: env.FRONTEND_URL,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
+app.use('/api', apiRateLimit);
+app.use('/api/auth', authRateLimit);
 
 // Capture raw body for WhatsApp webhook signature verification
 // Must be before express.json() for the webhook route
@@ -53,7 +71,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Request logging in development
-if (process.env.NODE_ENV !== 'production') {
+if (env.NODE_ENV !== 'production') {
   app.use((req: Request, _res: Response, next: NextFunction) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
     next();
@@ -89,7 +107,7 @@ app.get('/health', (_req: Request, res: Response) => {
     status: 'ok',
     version: '1.0.1',
     timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV || 'development',
+    env: env.NODE_ENV,
   });
 });
 
@@ -124,13 +142,13 @@ app.use((_req: Request, res: Response) => {
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('[Server] Unhandled error:', err);
   res.status(500).json({
-    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
+    error: env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
   });
 });
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 
-const PORT = parseInt(process.env.PORT || '3001', 10);
+const PORT = env.PORT;
 
 httpServer.listen(PORT, () => {
   console.log(`
@@ -139,8 +157,7 @@ httpServer.listen(PORT, () => {
 ╠═══════════════════════════════════════════════════╣
 ║  Status:   Running                                ║
 ║  Port:     ${PORT}                                   ║
-║  Env:      ${(process.env.NODE_ENV || 'development').padEnd(10)}                     ║
-║  DB:       ${(process.env.DATABASE_URL || 'file:./dev.db').padEnd(10)}              ║
+║  Env:      ${env.NODE_ENV.padEnd(10)}                     ║
 ╚═══════════════════════════════════════════════════╝
   `);
   console.log(`API:     http://localhost:${PORT}/api`);
