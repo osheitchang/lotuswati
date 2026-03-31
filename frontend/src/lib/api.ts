@@ -40,6 +40,8 @@ export const authApi = {
   register: (data: { teamName: string; name: string; email: string; password: string }) =>
     api.post('/auth/register', data),
   getMe: () => api.get('/auth/me'),
+  forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token: string, password: string) => api.post('/auth/reset-password', { token, password }),
   updateMe: (data: Partial<{ name: string; avatar: string; status: string }>) =>
     api.put('/auth/me', data),
 }

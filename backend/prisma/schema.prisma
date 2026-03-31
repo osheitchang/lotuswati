@@ -35,10 +35,12 @@ model User {
   role      String   @default("agent") // admin, agent, supervisor
   avatar    String?
   status    String   @default("online") // online, offline, busy
-  teamId    String
-  team      Team     @relation(fields: [teamId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  teamId           String
+  team             Team     @relation(fields: [teamId], references: [id])
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   assignedConversations Conversation[] @relation("AssignedTo")
   messages              Message[]

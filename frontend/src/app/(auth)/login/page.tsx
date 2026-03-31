@@ -140,6 +140,14 @@ export default function LoginPage() {
               {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
             </div>
 
+            {mode === 'login' && (
+              <div className="text-right -mt-1">
+                <a href="/forgot-password" className="text-xs text-primary-600 hover:underline">
+                  Forgot password?
+                </a>
+              </div>
+            )}
+
             <Button type="submit" className="w-full h-10 mt-2" disabled={isLoading}>
               {isLoading ? (
                 <>
