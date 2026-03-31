@@ -9,7 +9,7 @@ import {
 } from '../services/whatsapp';
 import { processAutomations } from '../services/automation';
 import { getIO } from '../lib/socket';
-import { r2Enabled, downloadWhatsAppMedia, uploadMedia } from '../services/storage';
+import { r2Enabled, downloadWhatsAppMedia, uploadMedia, getWhatsAppMediaUrl } from '../services/storage';
 
 const router = Router();
 
@@ -286,7 +286,7 @@ async function processMessage(
       messageType = 'text';
   }
 
-  // Resolve media URL — upload to R2 if configured, otherwise fall back to a placeholder
+  // Resolve media URL: upload to R2 if configured; otherwise fetch the real WhatsApp download URL
   const MEDIA_TYPES = ['image', 'audio', 'video', 'document', 'sticker'];
   let mediaUrl: string | undefined;
 
@@ -297,11 +297,22 @@ async function processMessage(
         mediaUrl = await uploadMedia(buffer, filename, dlMimeType);
         console.log(`[Webhook] Uploaded media ${mediaId} → ${mediaUrl}`);
       } catch (err) {
-        console.error('[Webhook] Media upload failed, falling back to placeholder:', err);
-        mediaUrl = `https://media.whatsapp.net/${mediaId}`;
+        console.error('[Webhook] R2 upload failed, falling back to WhatsApp download URL:', err);
+        try {
+          const { url } = await getWhatsAppMediaUrl(mediaId);
+          mediaUrl = url;
+        } catch (urlErr) {
+          console.error('[Webhook] Could not fetch WhatsApp media URL:', urlErr);
+        }
       }
     } else {
-      mediaUrl = `https://media.whatsapp.net/${mediaId}`;
+      // R2 not configured — fetch the real temporary download URL from WhatsApp
+      try {
+        const { url } = await getWhatsAppMediaUrl(mediaId);
+        mediaUrl = url;
+      } catch (err) {
+        console.error('[Webhook] Could not fetch WhatsApp media URL:', err);
+      }
     }
   }
 

@@ -104,4 +104,32 @@ export async function downloadWhatsAppMedia(mediaId: string): Promise<Downloaded
   return { buffer, mimeType, filename };
 }
 
+/**
+ * Fetch only the temporary download URL for a WhatsApp media object.
+ * Lighter than downloadWhatsAppMedia — no file download, no R2 upload.
+ * Used as a fallback when R2 is unavailable.
+ */
+export async function getWhatsAppMediaUrl(mediaId: string): Promise<{ url: string; mimeType: string }> {
+  const accessToken = process.env.WA_ACCESS_TOKEN;
+  if (!accessToken) {
+    throw new Error('[Storage] WA_ACCESS_TOKEN is not set');
+  }
+
+  const res = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`[Storage] Failed to fetch media URL for ${mediaId}: ${res.status} ${res.statusText}`);
+  }
+
+  const meta = (await res.json()) as { url: string; mime_type: string };
+
+  if (!meta.url) {
+    throw new Error(`[Storage] No URL returned for media ${mediaId}`);
+  }
+
+  return { url: meta.url, mimeType: meta.mime_type || 'application/octet-stream' };
+}
+
 export const r2Enabled = Boolean(isR2Configured);
