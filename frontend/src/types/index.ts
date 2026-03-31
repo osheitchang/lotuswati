@@ -2,7 +2,7 @@ export interface User {
   id: string
   email: string
   name: string
-  role: 'admin' | 'agent' | 'viewer'
+  role: 'admin' | 'agent' | 'supervisor'
   avatar?: string
   status: 'online' | 'offline' | 'busy'
   teamId: string
