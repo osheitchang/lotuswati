@@ -213,6 +213,35 @@ router.patch('/agents/:id', requireRole('admin'), async (req: Request, res: Resp
   }
 });
 
+// POST /api/team/agents/:id/reset-password
+router.post('/agents/:id/reset-password', requireRole('admin'), async (req: Request, res: Response) => {
+  try {
+    const agent = await prisma.user.findFirst({
+      where: { id: req.params.id, teamId: req.user!.teamId },
+    });
+
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found in this team' });
+    }
+
+    const tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
+    const hashedPassword = await bcrypt.hash(tempPassword, 12);
+
+    await prisma.user.update({
+      where: { id: req.params.id },
+      data: { password: hashedPassword },
+    });
+
+    return res.json({
+      tempPassword,
+      message: 'Password reset successfully. Share the temporary password with the agent.',
+    });
+  } catch (err) {
+    console.error('[Team] Reset password error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // DELETE /api/team/agents/:id
 router.delete('/agents/:id', requireRole('admin'), async (req: Request, res: Response) => {
   try {

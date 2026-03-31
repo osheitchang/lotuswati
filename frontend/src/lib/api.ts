@@ -159,8 +159,10 @@ export const teamApi = {
   getAgents: () => api.get('/team/agents'),
   inviteAgent: (data: { email: string; name: string; role: string }) =>
     api.post('/team/agents/invite', data),
-  updateAgent: (agentId: string, data: { role?: string; status?: string }) =>
-    api.put(`/team/agents/${agentId}`, data),
+  updateAgent: (agentId: string, data: { name?: string; role?: string; status?: string }) =>
+    api.patch(`/team/agents/${agentId}`, data),
+  resetAgentPassword: (agentId: string) =>
+    api.post(`/team/agents/${agentId}/reset-password`),
   removeAgent: (agentId: string) => api.delete(`/team/agents/${agentId}`),
   getLabels: () => api.get('/team/labels'),
   createLabel: (data: { name: string; color: string }) =>
