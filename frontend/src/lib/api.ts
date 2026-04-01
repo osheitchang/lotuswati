@@ -156,7 +156,7 @@ export const analyticsApi = {
 export const teamApi = {
   get: () => api.get('/team'),
   update: (data: { name?: string; waPhoneNumberId?: string; waAccessToken?: string }) =>
-    api.put('/team', data),
+    api.patch('/team', data),
   testConnection: () => api.post('/team/test-connection'),
   getAgents: () => api.get('/team/agents'),
   inviteAgent: (data: { email: string; name: string; role: string }) =>
