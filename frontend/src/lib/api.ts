@@ -132,10 +132,10 @@ export const automationsApi = {
   get: (id: string) => api.get(`/automations/${id}`),
   create: (data: { name: string; trigger: any; actions: any[] }) =>
     api.post('/automations', data),
-  update: (id: string, data: any) => api.put(`/automations/${id}`, data),
+  update: (id: string, data: any) => api.patch(`/automations/${id}`, data),
   delete: (id: string) => api.delete(`/automations/${id}`),
   toggle: (id: string, isActive: boolean) =>
-    api.put(`/automations/${id}/toggle`, { isActive }),
+    api.post(`/automations/${id}/toggle`, { isActive }),
 }
 
 // Analytics API
@@ -170,13 +170,13 @@ export const teamApi = {
   createLabel: (data: { name: string; color: string }) =>
     api.post('/team/labels', data),
   updateLabel: (labelId: string, data: { name?: string; color?: string }) =>
-    api.put(`/team/labels/${labelId}`, data),
+    api.patch(`/team/labels/${labelId}`, data),
   deleteLabel: (labelId: string) => api.delete(`/team/labels/${labelId}`),
   getCannedResponses: () => api.get('/team/canned-responses'),
   createCannedResponse: (data: { shortcut: string; content: string }) =>
     api.post('/team/canned-responses', data),
   updateCannedResponse: (id: string, data: { shortcut?: string; content?: string }) =>
-    api.put(`/team/canned-responses/${id}`, data),
+    api.patch(`/team/canned-responses/${id}`, data),
   deleteCannedResponse: (id: string) => api.delete(`/team/canned-responses/${id}`),
 }
 
