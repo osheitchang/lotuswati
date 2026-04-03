@@ -43,7 +43,7 @@ export const authApi = {
   forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token: string, password: string) => api.post('/auth/reset-password', { token, password }),
   updateMe: (data: Partial<{ name: string; avatar: string; status: string }>) =>
-    api.put('/auth/me', data),
+    api.patch('/auth/me', data),
 }
 
 // Contacts API
@@ -54,13 +54,13 @@ export const contactsApi = {
   create: (data: { phone: string; name?: string; email?: string; tags?: string[] }) =>
     api.post('/contacts', data),
   update: (id: string, data: Partial<{ name: string; email: string; tags: string[]; customFields: Record<string, string> }>) =>
-    api.put(`/contacts/${id}`, data),
+    api.patch(`/contacts/${id}`, data),
   delete: (id: string) => api.delete(`/contacts/${id}`),
   bulkDelete: (ids: string[]) => api.post('/contacts/bulk-delete', { ids }),
   import: (formData: FormData) =>
     api.post('/contacts/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   export: () => api.get('/contacts/export', { responseType: 'blob' }),
-  block: (id: string, blocked: boolean) => api.put(`/contacts/${id}/block`, { blocked }),
+  block: (id: string, blocked: boolean) => api.post(`/contacts/${id}/block`, { blocked }),
 }
 
 // Conversations API
@@ -83,13 +83,13 @@ export const conversationsApi = {
   removeLabel: (conversationId: string, labelId: string) =>
     api.delete(`/conversations/${conversationId}/labels/${labelId}`),
   assign: (conversationId: string, agentId: string | null) =>
-    api.put(`/conversations/${conversationId}/assign`, { agentId }),
+    api.post(`/conversations/${conversationId}/assign`, { agentId }),
   resolve: (conversationId: string) =>
-    api.put(`/conversations/${conversationId}/resolve`),
+    api.post(`/conversations/${conversationId}/resolve`),
   reopen: (conversationId: string) =>
-    api.put(`/conversations/${conversationId}/reopen`),
+    api.post(`/conversations/${conversationId}/reopen`),
   markRead: (conversationId: string) =>
-    api.put(`/conversations/${conversationId}/read`),
+    api.post(`/conversations/${conversationId}/read`),
 }
 
 // Templates API
@@ -107,7 +107,7 @@ export const templatesApi = {
     footer?: string
     buttons?: Array<{ type: string; text: string; url?: string; phone_number?: string }>
   }) => api.post('/templates', data),
-  update: (id: string, data: any) => api.put(`/templates/${id}`, data),
+  update: (id: string, data: any) => api.patch(`/templates/${id}`, data),
   delete: (id: string) => api.delete(`/templates/${id}`),
   submit: (id: string) => api.post(`/templates/${id}/submit`),
 }
