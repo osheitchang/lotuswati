@@ -14,6 +14,7 @@ import automationRoutes from './routes/automations';
 import analyticsRoutes from './routes/analytics';
 import teamRoutes from './routes/team';
 import webhookRoutes from './routes/webhook';
+import mediaRoutes from './routes/media';
 
 const app = express();
 const httpServer = createServer(app);
@@ -70,6 +71,7 @@ app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/automations', automationRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/team', teamRoutes);
+app.use('/api/media', mediaRoutes);
 app.use('/', webhookRoutes);
 
 // Health check

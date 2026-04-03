@@ -180,4 +180,10 @@ export const teamApi = {
   deleteCannedResponse: (id: string) => api.delete(`/team/canned-responses/${id}`),
 }
 
+// Media API
+export const mediaApi = {
+  uploadMedia: (formData: FormData) =>
+    api.post('/media/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+}
+
 export default api

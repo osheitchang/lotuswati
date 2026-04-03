@@ -23,7 +23,7 @@ interface InboxState {
   loadConversations: () => Promise<void>
   selectConversation: (id: string | null) => void
   loadMessages: (conversationId: string) => Promise<void>
-  sendMessage: (conversationId: string, content: string, type?: string, isNote?: boolean) => Promise<void>
+  sendMessage: (conversationId: string, content: string | undefined, type?: string, isNote?: boolean, mediaUrl?: string) => Promise<void>
   addNote: (conversationId: string, content: string) => Promise<void>
   resolveConversation: (id: string) => Promise<void>
   reopenConversation: (id: string) => Promise<void>
@@ -110,12 +110,13 @@ export const useInboxStore = create<InboxState>((set, get) => ({
     }
   },
 
-  sendMessage: async (conversationId, content, type = 'text', isNote = false) => {
+  sendMessage: async (conversationId, content, type = 'text', isNote = false, mediaUrl?: string) => {
     try {
       const response = await conversationsApi.sendMessage(conversationId, {
         content,
         type,
         isNote,
+        mediaUrl,
       })
       const message = response.data.message || response.data
       set((state) => ({

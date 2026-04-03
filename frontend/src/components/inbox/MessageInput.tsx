@@ -5,9 +5,14 @@ import {
   Send,
   Paperclip,
   FileText,
-  ChevronDown,
   StickyNote,
   Smile,
+  X,
+  Image,
+  File,
+  Music,
+  Video,
+  Loader2,
 } from 'lucide-react'
 import { useInboxStore } from '@/store/inboxStore'
 import { useAppStore } from '@/store/appStore'
@@ -15,13 +20,51 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { toast } from '@/components/ui/use-toast'
 import { CannedResponse, Template } from '@/types'
-import { templatesApi } from '@/lib/api'
+import { templatesApi, mediaApi } from '@/lib/api'
 
 interface MessageInputProps {
   conversationId: string
 }
 
 const COMMON_EMOJIS = ['😊', '👍', '❤️', '😂', '🙏', '✅', '🔥', '👋', '😍', '🎉', '💪', '✨', '🙌', '💯', '😅']
+
+const ACCEPT_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/aac',
+  'video/mp4', 'video/3gpp', 'video/quicktime', 'video/webm',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain', 'text/csv',
+  'application/zip',
+].join(',')
+
+function getFileIcon(mimeType: string) {
+  if (mimeType.startsWith('image/')) return <Image className="w-4 h-4" />
+  if (mimeType.startsWith('audio/')) return <Music className="w-4 h-4" />
+  if (mimeType.startsWith('video/')) return <Video className="w-4 h-4" />
+  return <File className="w-4 h-4" />
+}
+
+function getMessageType(mimeType: string): string {
+  if (mimeType.startsWith('image/')) return 'image'
+  if (mimeType.startsWith('audio/')) return 'audio'
+  if (mimeType.startsWith('video/')) return 'video'
+  return 'file'
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+interface PendingFile {
+  file: File
+  preview?: string // for images
+}
 
 export function MessageInput({ conversationId }: MessageInputProps) {
   const { sendMessage } = useInboxStore()
@@ -34,7 +77,10 @@ export function MessageInput({ conversationId }: MessageInputProps) {
   const [showTemplates, setShowTemplates] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
   const [cannedFilter, setCannedFilter] = useState('')
+  const [pendingFile, setPendingFile] = useState<PendingFile | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Auto-resize textarea
   useEffect(() => {
@@ -60,7 +106,75 @@ export function MessageInput({ conversationId }: MessageInputProps) {
       cr.content.toLowerCase().includes(cannedFilter.toLowerCase())
   )
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 16 * 1024 * 1024) {
+      toast({ title: 'File too large', description: 'Maximum file size is 16MB', variant: 'destructive' })
+      return
+    }
+
+    const pending: PendingFile = { file }
+    if (file.type.startsWith('image/')) {
+      pending.preview = URL.createObjectURL(file)
+    }
+    setPendingFile(pending)
+    // Reset the input so the same file can be re-selected
+    e.target.value = ''
+  }
+
+  const clearPendingFile = () => {
+    if (pendingFile?.preview) URL.revokeObjectURL(pendingFile.preview)
+    setPendingFile(null)
+    setUploadProgress(null)
+  }
+
+  const handleSendFile = async () => {
+    if (!pendingFile || isSending) return
+
+    setIsSending(true)
+    setUploadProgress(0)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', pendingFile.file)
+
+      // Simulate progress while uploading (axios doesn't expose upload progress easily through our wrapper)
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => (prev !== null && prev < 85 ? prev + 10 : prev))
+      }, 200)
+
+      const response = await mediaApi.uploadMedia(formData)
+      clearInterval(progressInterval)
+      setUploadProgress(100)
+
+      const { url, mimeType } = response.data
+      const msgType = getMessageType(mimeType)
+
+      await sendMessage(conversationId, content.trim() || undefined, msgType, false, url)
+
+      setContent('')
+      clearPendingFile()
+      textareaRef.current?.focus()
+    } catch (error: any) {
+      toast({
+        title: 'Failed to send file',
+        description: error.response?.data?.error || error.response?.data?.message || 'An error occurred',
+        variant: 'destructive',
+      })
+      setUploadProgress(null)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
   const handleSend = async () => {
+    if (pendingFile) {
+      await handleSendFile()
+      return
+    }
+
     const trimmed = content.trim()
     if (!trimmed || isSending) return
 
@@ -127,6 +241,8 @@ export function MessageInput({ conversationId }: MessageInputProps) {
       toast({ title: 'Failed to load templates', variant: 'destructive' })
     }
   }
+
+  const canSend = pendingFile ? !isSending : (!!content.trim() && !isSending)
 
   return (
     <div className={cn(
@@ -203,6 +319,54 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
+      {/* Pending file preview */}
+      {pendingFile && (
+        <div className="border-t border-gray-100 px-4 py-2">
+          <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
+            {pendingFile.preview ? (
+              <img
+                src={pendingFile.preview}
+                alt="Preview"
+                className="w-10 h-10 rounded object-cover flex-shrink-0"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 text-gray-500">
+                {getFileIcon(pendingFile.file.type)}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-800 truncate">{pendingFile.file.name}</p>
+              <p className="text-xs text-gray-500">{formatBytes(pendingFile.file.size)}</p>
+              {uploadProgress !== null && (
+                <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary-500 transition-all duration-200"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              )}
+            </div>
+            {!isSending && (
+              <button
+                onClick={clearPendingFile}
+                className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={ACCEPT_TYPES}
+        className="hidden"
+        onChange={handleFileSelect}
+      />
+
       {/* Main input */}
       <div className="flex items-end gap-2 px-4 py-3">
         {/* Toolbar */}
@@ -211,12 +375,15 @@ export function MessageInput({ conversationId }: MessageInputProps) {
             onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowTemplates(false) }}
             className={cn('p-1.5 rounded hover:bg-gray-100 transition-colors', showEmojiPicker && 'bg-gray-100')}
             title="Emoji"
+            disabled={isSending}
           >
             <Smile className="w-4 h-4 text-gray-500" />
           </button>
           <button
-            className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+            onClick={() => { fileInputRef.current?.click(); setShowEmojiPicker(false); setShowTemplates(false) }}
+            className={cn('p-1.5 rounded hover:bg-gray-100 transition-colors', pendingFile && 'bg-gray-100')}
             title="Attach file"
+            disabled={isSending}
           >
             <Paperclip className="w-4 h-4 text-gray-500" />
           </button>
@@ -224,6 +391,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
             onClick={() => { loadTemplates(); setShowEmojiPicker(false) }}
             className={cn('p-1.5 rounded hover:bg-gray-100 transition-colors', showTemplates && 'bg-gray-100')}
             title="Templates"
+            disabled={isSending}
           >
             <FileText className="w-4 h-4 text-gray-500" />
           </button>
@@ -231,6 +399,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
             onClick={() => setIsNote(!isNote)}
             className={cn('p-1.5 rounded hover:bg-gray-100 transition-colors', isNote && 'bg-yellow-100')}
             title="Send as note"
+            disabled={isSending || !!pendingFile}
           >
             <StickyNote className={cn('w-4 h-4', isNote ? 'text-yellow-600' : 'text-gray-500')} />
           </button>
@@ -242,7 +411,13 @@ export function MessageInput({ conversationId }: MessageInputProps) {
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isNote ? 'Write an internal note...' : 'Type a message... (/ for canned responses)'}
+          placeholder={
+            pendingFile
+              ? 'Add a caption (optional)...'
+              : isNote
+              ? 'Write an internal note...'
+              : 'Type a message... (/ for canned responses)'
+          }
           className={cn(
             'flex-1 resize-none text-sm border rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary-400 placeholder:text-gray-400 min-h-[38px] max-h-[120px]',
             isNote
@@ -250,19 +425,24 @@ export function MessageInput({ conversationId }: MessageInputProps) {
               : 'bg-gray-50 border-gray-200'
           )}
           rows={1}
+          disabled={isSending}
         />
 
         {/* Send button */}
         <Button
           onClick={handleSend}
-          disabled={!content.trim() || isSending}
+          disabled={!canSend}
           size="icon"
           className={cn(
             'h-9 w-9 flex-shrink-0 rounded-xl transition-all',
-            !content.trim() && 'opacity-50'
+            !canSend && 'opacity-50'
           )}
         >
-          <Send className="w-4 h-4" />
+          {isSending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Send className="w-4 h-4" />
+          )}
         </Button>
       </div>
 
