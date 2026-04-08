@@ -1,12 +1,20 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { Search, Plus, Filter, RefreshCw } from 'lucide-react'
 import { useInboxStore } from '@/store/inboxStore'
 import { useAppStore } from '@/store/appStore'
 import { ConversationItem } from './ConversationItem'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +53,10 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
   const { labels, agents } = useAppStore()
   const [searchValue, setSearchValue] = useState(filters.search)
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [showNewDialog, setShowNewDialog] = useState(false)
+  const [newPhone, setNewPhone] = useState('')
+  const [newMessage, setNewMessage] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
 
   useEffect(() => {
     loadConversations()
@@ -61,20 +73,44 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
   }
 
   const handleCreateConversation = async () => {
-    const phone = window.prompt('Enter phone number (with country code, e.g. 1234567890):')
+    const phone = newPhone.replace(/\D/g, '')
     if (!phone) return
+    setIsCreating(true)
     try {
-      const response = await conversationsApi.create({ phone: phone.replace(/\D/g, '') })
+      const response = await conversationsApi.create({
+        phone,
+        message: newMessage.trim() || undefined,
+      })
       const conversation = response.data.conversation || response.data
-      toast({ title: 'Conversation created', description: `Started conversation with ${phone}` })
+      toast({ title: 'Conversation started' })
+      setShowNewDialog(false)
+      setNewPhone('')
+      setNewMessage('')
       loadConversations()
       selectConversation(conversation.id)
     } catch (error: any) {
-      toast({
-        title: 'Failed to create conversation',
-        description: error.response?.data?.message || 'An error occurred',
-        variant: 'destructive',
-      })
+      const status = error.response?.status
+      if (status === 409) {
+        // Open conversation already exists — just navigate to it
+        const existingId = error.response.data.conversationId
+        if (existingId) {
+          setShowNewDialog(false)
+          setNewPhone('')
+          setNewMessage('')
+          selectConversation(existingId)
+          toast({ title: 'Existing conversation opened' })
+        } else {
+          toast({ title: 'A conversation with this contact is already open', variant: 'destructive' })
+        }
+      } else {
+        toast({
+          title: 'Failed to create conversation',
+          description: error.response?.data?.error || error.response?.data?.message || 'An error occurred',
+          variant: 'destructive',
+        })
+      }
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -105,7 +141,7 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
             <Button
               size="sm"
               className="h-8 gap-1.5"
-              onClick={handleCreateConversation}
+              onClick={() => setShowNewDialog(true)}
             >
               <Plus className="w-3.5 h-3.5" />
               New
@@ -242,6 +278,45 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
           ))
         )}
       </div>
+      {/* ── New Conversation Dialog ── */}
+      <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) { setNewPhone(''); setNewMessage('') } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>New Conversation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label htmlFor="new-phone">Phone Number</Label>
+              <Input
+                id="new-phone"
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                placeholder="e.g. 1234567890 (with country code)"
+                className="mt-1"
+                onKeyDown={(e) => e.key === 'Enter' && !newMessage && handleCreateConversation()}
+              />
+              <p className="text-xs text-gray-400 mt-1">Digits only — include the country code, e.g. 628123456789</p>
+            </div>
+            <div>
+              <Label htmlFor="new-message">First Message <span className="text-gray-400 font-normal">(optional)</span></Label>
+              <textarea
+                id="new-message"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Hi! How can I help you today?"
+                className="w-full mt-1 border rounded-md px-3 py-2 text-sm min-h-[72px] resize-none focus:outline-none focus:ring-1 focus:ring-primary-500 border-gray-200"
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleCreateConversation() }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancel</Button>
+            <Button onClick={handleCreateConversation} disabled={isCreating || !newPhone.replace(/\D/g, '')}>
+              {isCreating ? 'Starting...' : 'Start Conversation'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

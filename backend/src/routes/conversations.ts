@@ -110,9 +110,12 @@ router.get('/', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   try {
     const schema = z.object({
-      contactId: z.string().uuid(),
+      contactId: z.string().uuid().optional(),
+      phone: z.string().min(5).optional(),
       message: z.string().optional(),
       assignedToId: z.string().uuid().optional().nullable(),
+    }).refine((d) => d.contactId || d.phone, {
+      message: 'Either contactId or phone is required',
     });
 
     const parsed = schema.safeParse(req.body);
@@ -120,15 +123,28 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Validation failed', details: parsed.error.errors });
     }
 
-    const { contactId, message, assignedToId } = parsed.data;
+    const { contactId, phone, message, assignedToId } = parsed.data;
+    const teamId = req.user!.teamId;
 
-    // Verify contact belongs to this team
-    const contact = await prisma.contact.findFirst({
-      where: { id: contactId, teamId: req.user!.teamId },
-    });
-
-    if (!contact) {
-      return res.status(404).json({ error: 'Contact not found' });
+    // Resolve contact — look up by contactId or phone, creating if needed
+    let contact;
+    if (contactId) {
+      contact = await prisma.contact.findFirst({
+        where: { id: contactId, teamId },
+      });
+      if (!contact) {
+        return res.status(404).json({ error: 'Contact not found' });
+      }
+    } else {
+      const normalised = phone!.replace(/\D/g, '');
+      contact = await prisma.contact.findUnique({
+        where: { phone_teamId: { phone: normalised, teamId } },
+      });
+      if (!contact) {
+        contact = await prisma.contact.create({
+          data: { phone: normalised, name: normalised, teamId, tags: '[]', customFields: '{}' },
+        });
+      }
     }
 
     if (contact.blocked) {
@@ -137,11 +153,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Check for existing open conversation
     const existing = await prisma.conversation.findFirst({
-      where: {
-        contactId,
-        teamId: req.user!.teamId,
-        status: 'open',
-      },
+      where: { contactId: contact.id, teamId, status: 'open' },
     });
 
     if (existing) {
@@ -153,8 +165,8 @@ router.post('/', async (req: Request, res: Response) => {
 
     const conversation = await prisma.conversation.create({
       data: {
-        teamId: req.user!.teamId,
-        contactId,
+        teamId,
+        contactId: contact.id,
         assignedToId: assignedToId || null,
         lastMessageAt: new Date(),
       },
