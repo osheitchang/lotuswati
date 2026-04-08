@@ -66,9 +66,9 @@ export default function SettingsPage() {
   const isAdmin = currentUser?.role === 'admin'
 
   // ── Profile tab ──
-  const [profileForm, setProfileForm] = useState({
+  const [profileForm, setProfileForm] = useState<{ name: string; status: 'online' | 'offline' | 'busy' }>({
     name: currentUser?.name || '',
-    status: currentUser?.status || 'online',
+    status: currentUser?.status ?? 'online',
   })
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
@@ -130,7 +130,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (currentUser) {
-      setProfileForm({ name: currentUser.name, status: currentUser.status || 'online' })
+      setProfileForm({ name: currentUser.name, status: currentUser.status ?? 'online' })
     }
   }, [currentUser])
 
@@ -139,7 +139,7 @@ export default function SettingsPage() {
     if (!profileForm.name.trim()) return
     setIsSavingProfile(true)
     try {
-      const response = await authApi.updateMe({ name: profileForm.name, status: profileForm.status as any })
+      const response = await authApi.updateMe({ name: profileForm.name, status: profileForm.status })
       const updated = response.data.user || response.data
       updateUser(updated)
       toast({ title: 'Profile updated' })
@@ -396,7 +396,7 @@ export default function SettingsPage() {
                     <Label>Status</Label>
                     <Select
                       value={profileForm.status}
-                      onValueChange={(v) => setProfileForm({ ...profileForm, status: v })}
+                      onValueChange={(v) => setProfileForm({ ...profileForm, status: v as 'online' | 'offline' | 'busy' })}
                     >
                       <SelectTrigger className="mt-1 max-w-xs">
                         <SelectValue />
