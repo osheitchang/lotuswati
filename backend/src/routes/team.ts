@@ -183,6 +183,11 @@ router.patch('/agents/:id', requireRole('admin'), async (req: Request, res: Resp
       return res.status(400).json({ error: 'Validation failed', details: parsed.error.errors });
     }
 
+    // Prevent self-role changes
+    if (req.params.id === req.user!.id && parsed.data.role !== undefined) {
+      return res.status(400).json({ error: 'You cannot change your own role' });
+    }
+
     // Prevent removing the last admin
     if (parsed.data.role && parsed.data.role !== 'admin' && agent.role === 'admin') {
       const adminCount = await prisma.user.count({

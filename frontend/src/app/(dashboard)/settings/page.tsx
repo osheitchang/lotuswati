@@ -892,7 +892,11 @@ export default function SettingsPage() {
             </div>
             <div>
               <Label>Role</Label>
-              <Select value={editAgentForm.role} onValueChange={(v) => setEditAgentForm({ ...editAgentForm, role: v })}>
+              <Select
+                value={editAgentForm.role}
+                onValueChange={(v) => setEditAgentForm({ ...editAgentForm, role: v })}
+                disabled={editingAgent?.id === currentUser?.id}
+              >
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
@@ -900,6 +904,9 @@ export default function SettingsPage() {
                   <SelectItem value="agent">Agent</SelectItem>
                 </SelectContent>
               </Select>
+              {editingAgent?.id === currentUser?.id && (
+                <p className="text-xs text-gray-400 mt-1">You cannot change your own role.</p>
+              )}
             </div>
           </div>
           <DialogFooter>
