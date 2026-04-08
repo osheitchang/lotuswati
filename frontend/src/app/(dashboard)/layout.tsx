@@ -6,7 +6,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { useAuthStore } from '@/store/authStore'
 import { useAppStore } from '@/store/appStore'
 import { useInboxStore } from '@/store/inboxStore'
-import { initSocket, getSocket } from '@/lib/socket'
+import { initSocket, getSocket, disconnectSocket } from '@/lib/socket'
 
 export default function DashboardLayout({
   children,
@@ -16,7 +16,7 @@ export default function DashboardLayout({
   const router = useRouter()
   const { token, isAuthenticated, loadUser, isLoading } = useAuthStore()
   const { loadAll, setConnected } = useAppStore()
-  const { addIncomingMessage, updateConversation, addConversation, updateMessageStatus } = useInboxStore()
+  const { addIncomingMessage, updateConversation, addConversation, updateMessageStatus, loadConversations, selectedConversationId } = useInboxStore()
 
   useEffect(() => {
     const init = async () => {
@@ -79,6 +79,11 @@ export default function DashboardLayout({
       } as any)
     })
 
+    socket.on('conversation:message', () => {
+      // Refresh the conversation list so lastMessage and unreadCount stay current
+      loadConversations()
+    })
+
     socket.on('conversation:resolved', (data: any) => {
       updateConversation({
         id: data.conversationId,
@@ -94,9 +99,27 @@ export default function DashboardLayout({
       socket.off('conversation:created')
       socket.off('conversation:updated')
       socket.off('conversation:assigned')
+      socket.off('conversation:message')
       socket.off('conversation:resolved')
+      disconnectSocket()
     }
   }, [token])
+
+  // Join/leave conversation rooms when the selected conversation changes
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket) return
+
+    if (selectedConversationId) {
+      socket.emit('join_conversation', { conversationId: selectedConversationId })
+    }
+
+    return () => {
+      if (selectedConversationId) {
+        socket.emit('leave_conversation', { conversationId: selectedConversationId })
+      }
+    }
+  }, [selectedConversationId])
 
   if (isLoading) {
     return (
