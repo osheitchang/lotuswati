@@ -42,7 +42,7 @@ export const authApi = {
   getMe: () => api.get('/auth/me'),
   forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token: string, password: string) => api.post('/auth/reset-password', { token, password }),
-  updateMe: (data: Partial<{ name: string; avatar: string; status: string }>) =>
+  updateMe: (data: Partial<{ name: string; avatar: string; status: string; currentPassword: string; newPassword: string }>) =>
     api.patch('/auth/me', data),
 }
 

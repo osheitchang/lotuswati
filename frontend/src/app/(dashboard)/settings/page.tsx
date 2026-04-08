@@ -20,6 +20,8 @@ import {
   MoreVertical,
   KeyRound,
   UserX,
+  UserCircle,
+  Lock,
 } from 'lucide-react'
 import { teamApi, authApi } from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -58,10 +60,27 @@ import type { User, Label as LabelType, CannedResponse } from '@/types'
 const LABEL_COLORS = ['#6366F1', '#8B5CF6', '#EC4899', '#EF4444', '#F59E0B', '#10B981', '#06B6D4', '#3B82F6']
 
 export default function SettingsPage() {
-  const { team, setTeam, user: currentUser } = useAuthStore()
+  const { team, setTeam, user: currentUser, updateUser } = useAuthStore()
   const { labels, agents, cannedResponses, addLabel, updateLabel, removeLabel, addAgent, updateAgent, removeAgent, addCannedResponse, updateCannedResponse, removeCannedResponse } = useAppStore()
 
-  // Team tab
+  const isAdmin = currentUser?.role === 'admin'
+
+  // ── Profile tab ──
+  const [profileForm, setProfileForm] = useState({
+    name: currentUser?.name || '',
+    status: currentUser?.status || 'online',
+  })
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmNewPassword: '',
+  })
+  const [showCurrentPw, setShowCurrentPw] = useState(false)
+  const [showNewPw, setShowNewPw] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+
+  // ── Team tab ──
   const [teamName, setTeamName] = useState(team?.name || '')
   const [waPhoneId, setWaPhoneId] = useState(team?.waPhoneNumberId || '')
   const [waToken, setWaToken] = useState(team?.waAccessToken || '')
@@ -69,33 +88,33 @@ export default function SettingsPage() {
   const [isSavingTeam, setIsSavingTeam] = useState(false)
   const [isTestingConn, setIsTestingConn] = useState(false)
 
-  // Invite agent dialog
+  // ── Invite agent dialog ──
   const [showAgentDialog, setShowAgentDialog] = useState(false)
   const [agentForm, setAgentForm] = useState({ email: '', name: '', role: 'agent' })
   const [isInviting, setIsInviting] = useState(false)
   const [inviteResult, setInviteResult] = useState<{ email: string; tempPassword: string } | null>(null)
 
-  // Edit agent dialog
+  // ── Edit agent dialog ──
   const [editingAgent, setEditingAgent] = useState<User | null>(null)
   const [editAgentForm, setEditAgentForm] = useState({ name: '', role: 'agent' })
   const [isEditingAgent, setIsEditingAgent] = useState(false)
 
-  // Reset password dialogs
+  // ── Reset password dialogs ──
   const [resettingPasswordFor, setResettingPasswordFor] = useState<User | null>(null)
   const [passwordResetResult, setPasswordResetResult] = useState<{ email: string; tempPassword: string } | null>(null)
   const [isResettingPassword, setIsResettingPassword] = useState(false)
 
-  // Remove agent dialog
+  // ── Remove agent dialog ──
   const [agentToRemove, setAgentToRemove] = useState<User | null>(null)
   const [isRemoving, setIsRemoving] = useState(false)
 
-  // Label dialog
+  // ── Label dialog ──
   const [showLabelDialog, setShowLabelDialog] = useState(false)
   const [editingLabel, setEditingLabel] = useState<LabelType | null>(null)
   const [labelForm, setLabelForm] = useState({ name: '', color: LABEL_COLORS[0] })
   const [isSavingLabel, setIsSavingLabel] = useState(false)
 
-  // Canned response dialog
+  // ── Canned response dialog ──
   const [showCannedDialog, setShowCannedDialog] = useState(false)
   const [editingCanned, setEditingCanned] = useState<CannedResponse | null>(null)
   const [cannedForm, setCannedForm] = useState({ shortcut: '', content: '' })
@@ -109,6 +128,53 @@ export default function SettingsPage() {
     }
   }, [team])
 
+  useEffect(() => {
+    if (currentUser) {
+      setProfileForm({ name: currentUser.name, status: currentUser.status || 'online' })
+    }
+  }, [currentUser])
+
+  // ── Profile handlers ──
+  const handleSaveProfile = async () => {
+    if (!profileForm.name.trim()) return
+    setIsSavingProfile(true)
+    try {
+      const response = await authApi.updateMe({ name: profileForm.name, status: profileForm.status as any })
+      const updated = response.data.user || response.data
+      updateUser(updated)
+      toast({ title: 'Profile updated' })
+    } catch (error: any) {
+      toast({ title: error.response?.data?.error || 'Failed to save', variant: 'destructive' })
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
+
+  const handleChangePassword = async () => {
+    if (passwordForm.newPassword.length < 8) {
+      toast({ title: 'New password must be at least 8 characters', variant: 'destructive' })
+      return
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmNewPassword) {
+      toast({ title: 'Passwords do not match', variant: 'destructive' })
+      return
+    }
+    setIsChangingPassword(true)
+    try {
+      await authApi.updateMe({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      })
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmNewPassword: '' })
+      toast({ title: 'Password changed successfully' })
+    } catch (error: any) {
+      toast({ title: error.response?.data?.error || 'Failed to change password', variant: 'destructive' })
+    } finally {
+      setIsChangingPassword(false)
+    }
+  }
+
+  // ── Team handlers ──
   const handleSaveTeam = async () => {
     setIsSavingTeam(true)
     try {
@@ -139,6 +205,7 @@ export default function SettingsPage() {
     }
   }
 
+  // ── Agent handlers ──
   const handleInviteAgent = async () => {
     setIsInviting(true)
     try {
@@ -173,11 +240,7 @@ export default function SettingsPage() {
       setEditingAgent(null)
       toast({ title: 'Agent updated' })
     } catch (error: any) {
-      toast({
-        title: 'Failed to update',
-        description: error.response?.data?.error,
-        variant: 'destructive',
-      })
+      toast({ title: 'Failed to update', description: error.response?.data?.error, variant: 'destructive' })
     } finally {
       setIsEditingAgent(false)
     }
@@ -191,11 +254,7 @@ export default function SettingsPage() {
       setResettingPasswordFor(null)
       setPasswordResetResult({ email: resettingPasswordFor.email, tempPassword: response.data.tempPassword })
     } catch (error: any) {
-      toast({
-        title: 'Failed to reset password',
-        description: error.response?.data?.error,
-        variant: 'destructive',
-      })
+      toast({ title: 'Failed to reset password', description: error.response?.data?.error, variant: 'destructive' })
     } finally {
       setIsResettingPassword(false)
     }
@@ -210,28 +269,24 @@ export default function SettingsPage() {
       setAgentToRemove(null)
       toast({ title: 'Agent removed' })
     } catch (error: any) {
-      toast({
-        title: error.response?.data?.error || 'Failed to remove',
-        variant: 'destructive',
-      })
+      toast({ title: error.response?.data?.error || 'Failed to remove', variant: 'destructive' })
     } finally {
       setIsRemoving(false)
     }
   }
 
+  // ── Label handlers ──
   const handleSaveLabel = async () => {
     if (!labelForm.name.trim()) return
     setIsSavingLabel(true)
     try {
       if (editingLabel) {
         const response = await teamApi.updateLabel(editingLabel.id, labelForm)
-        const label = response.data.label || response.data
-        updateLabel(label)
+        updateLabel(response.data.label || response.data)
         toast({ title: 'Label updated' })
       } else {
         const response = await teamApi.createLabel(labelForm)
-        const label = response.data.label || response.data
-        addLabel(label)
+        addLabel(response.data.label || response.data)
         toast({ title: 'Label created' })
       }
       setShowLabelDialog(false)
@@ -252,6 +307,7 @@ export default function SettingsPage() {
     }
   }
 
+  // ── Canned response handlers ──
   const handleSaveCanned = async () => {
     if (!cannedForm.shortcut.trim() || !cannedForm.content.trim()) return
     setIsSavingCanned(true)
@@ -283,7 +339,9 @@ export default function SettingsPage() {
     }
   }
 
-  const webhookUrl = 'http://localhost:3001/webhook'
+  const webhookUrl = typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:3001/webhook`
+    : 'http://localhost:3001/webhook'
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -298,170 +356,301 @@ export default function SettingsPage() {
       </div>
 
       <div className="flex-1 p-6">
-        <Tabs defaultValue="team" className="w-full">
+        <Tabs defaultValue={isAdmin ? 'team' : 'profile'} className="w-full">
           <TabsList className="mb-6">
-            <TabsTrigger value="team" className="gap-1.5"><Building2 className="w-4 h-4" /> Team</TabsTrigger>
-            <TabsTrigger value="agents" className="gap-1.5"><Users className="w-4 h-4" /> Agents</TabsTrigger>
-            <TabsTrigger value="labels" className="gap-1.5"><Tag className="w-4 h-4" /> Labels</TabsTrigger>
-            <TabsTrigger value="canned" className="gap-1.5"><MessageSquare className="w-4 h-4" /> Canned Responses</TabsTrigger>
+            <TabsTrigger value="profile" className="gap-1.5"><UserCircle className="w-4 h-4" /> Profile</TabsTrigger>
+            {isAdmin && (
+              <>
+                <TabsTrigger value="team" className="gap-1.5"><Building2 className="w-4 h-4" /> Team</TabsTrigger>
+                <TabsTrigger value="agents" className="gap-1.5"><Users className="w-4 h-4" /> Agents</TabsTrigger>
+                <TabsTrigger value="labels" className="gap-1.5"><Tag className="w-4 h-4" /> Labels</TabsTrigger>
+                <TabsTrigger value="canned" className="gap-1.5"><MessageSquare className="w-4 h-4" /> Canned Responses</TabsTrigger>
+              </>
+            )}
             <TabsTrigger value="notifications" className="gap-1.5"><Bell className="w-4 h-4" /> Notifications</TabsTrigger>
           </TabsList>
 
-          {/* ── Team Tab ── */}
-          <TabsContent value="team">
-            <div className="max-w-2xl space-y-6">
-              <div className="bg-white rounded-xl border border-gray-100 p-5">
-                <h3 className="font-semibold text-gray-900 mb-4">General</h3>
-                <div className="space-y-4">
-                  <div>
-                    <Label>Team Name</Label>
-                    <Input
-                      value={teamName}
-                      onChange={(e) => setTeamName(e.target.value)}
-                      className="mt-1 max-w-sm"
-                    />
-                  </div>
-                  <Button onClick={handleSaveTeam} disabled={isSavingTeam} size="sm">
-                    {isSavingTeam ? 'Saving...' : 'Save Changes'}
-                  </Button>
-                </div>
-              </div>
-
+          {/* ── Profile Tab ── */}
+          <TabsContent value="profile">
+            <div className="max-w-xl space-y-6">
+              {/* Profile info */}
               <div className="bg-white rounded-xl border border-gray-100 p-5">
                 <div className="flex items-center gap-2 mb-4">
-                  <Wifi className="w-5 h-5 text-green-500" />
-                  <h3 className="font-semibold text-gray-900">WhatsApp Connection</h3>
+                  <UserCircle className="w-5 h-5 text-gray-400" />
+                  <h3 className="font-semibold text-gray-900">Profile</h3>
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <Label>Phone Number ID</Label>
+                    <Label>Display Name</Label>
                     <Input
-                      value={waPhoneId}
-                      onChange={(e) => setWaPhoneId(e.target.value)}
-                      placeholder="123456789012345"
+                      value={profileForm.name}
+                      onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
                       className="mt-1"
                     />
                   </div>
                   <div>
-                    <Label>Access Token</Label>
+                    <Label>Email</Label>
+                    <Input value={currentUser?.email || ''} readOnly className="mt-1 bg-gray-50 text-gray-500" />
+                  </div>
+                  <div>
+                    <Label>Status</Label>
+                    <Select
+                      value={profileForm.status}
+                      onValueChange={(v) => setProfileForm({ ...profileForm, status: v })}
+                    >
+                      <SelectTrigger className="mt-1 max-w-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="online">Online</SelectItem>
+                        <SelectItem value="busy">Busy</SelectItem>
+                        <SelectItem value="offline">Offline</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Role</Label>
+                    <div className="mt-1">
+                      <span className={cn(
+                        'inline-block text-xs px-2.5 py-1 rounded-full font-medium capitalize',
+                        currentUser?.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                        currentUser?.role === 'supervisor' ? 'bg-blue-100 text-blue-700' :
+                        'bg-gray-100 text-gray-600'
+                      )}>
+                        {currentUser?.role}
+                      </span>
+                    </div>
+                  </div>
+                  <Button onClick={handleSaveProfile} disabled={isSavingProfile} size="sm">
+                    {isSavingProfile ? 'Saving...' : 'Save Profile'}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Change password */}
+              <div className="bg-white rounded-xl border border-gray-100 p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Lock className="w-5 h-5 text-gray-400" />
+                  <h3 className="font-semibold text-gray-900">Change Password</h3>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Current Password</Label>
                     <div className="relative mt-1">
                       <Input
-                        type={showToken ? 'text' : 'password'}
-                        value={waToken}
-                        onChange={(e) => setWaToken(e.target.value)}
-                        placeholder="EAAxxxxxx..."
+                        type={showCurrentPw ? 'text' : 'password'}
+                        value={passwordForm.currentPassword}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
                         className="pr-10"
+                        placeholder="Enter current password"
                       />
                       <button
-                        onClick={() => setShowToken(!showToken)}
+                        type="button"
+                        onClick={() => setShowCurrentPw(!showCurrentPw)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                       >
-                        {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
                   <div>
-                    <Label>Webhook URL (read-only)</Label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Input value={webhookUrl} readOnly className="bg-gray-50 text-gray-500" />
-                      <Button variant="outline" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => copyToClipboard(webhookUrl)}>
-                        <Copy className="w-4 h-4" />
-                      </Button>
+                    <Label>New Password</Label>
+                    <div className="relative mt-1">
+                      <Input
+                        type={showNewPw ? 'text' : 'password'}
+                        value={passwordForm.newPassword}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                        className="pr-10"
+                        placeholder="Min. 8 characters"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPw(!showNewPw)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                     </div>
                   </div>
-                  {team?.webhookVerifyToken && (
-                    <div>
-                      <Label>Verify Token (read-only)</Label>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Input value={team.webhookVerifyToken} readOnly className="bg-gray-50 text-gray-500 font-mono" />
-                        <Button variant="outline" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => copyToClipboard(team.webhookVerifyToken!)}>
-                          <Copy className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Button onClick={handleSaveTeam} disabled={isSavingTeam} size="sm">
-                      {isSavingTeam ? 'Saving...' : 'Save Connection'}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleTestConnection} disabled={isTestingConn}>
-                      {isTestingConn ? 'Testing...' : 'Test Connection'}
-                    </Button>
+                  <div>
+                    <Label>Confirm New Password</Label>
+                    <Input
+                      type="password"
+                      value={passwordForm.confirmNewPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmNewPassword: e.target.value })}
+                      className="mt-1"
+                      placeholder="Repeat new password"
+                    />
                   </div>
-                </div>
-                <div className="mt-5 pt-5 border-t border-gray-100">
-                  <p className="text-sm font-medium text-gray-700 mb-3">Setup Guide</p>
-                  <ol className="space-y-2">
-                    {[
-                      'Create a Meta App at developers.facebook.com',
-                      'Add WhatsApp product to your app',
-                      'Copy your Phone Number ID and Access Token above',
-                      'Set the Webhook URL in your Meta App settings',
-                      'Use the Verify Token to verify the webhook',
-                      'Click "Test Connection" to verify everything works',
-                    ].map((step, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
-                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary-100 text-primary-700 text-xs flex items-center justify-center font-semibold mt-0.5">
-                          {i + 1}
-                        </span>
-                        {step}
-                      </li>
-                    ))}
-                  </ol>
+                  <Button
+                    onClick={handleChangePassword}
+                    disabled={isChangingPassword || !passwordForm.currentPassword || !passwordForm.newPassword}
+                    size="sm"
+                  >
+                    {isChangingPassword ? 'Changing...' : 'Change Password'}
+                  </Button>
                 </div>
               </div>
             </div>
           </TabsContent>
 
-          {/* ── Agents Tab ── */}
-          <TabsContent value="agents">
-            <div className="max-w-3xl">
-              <div className="bg-white rounded-xl border border-gray-100">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                  <h3 className="font-semibold text-gray-900">Team Members ({agents.length})</h3>
-                  <Button size="sm" className="gap-1.5" onClick={() => setShowAgentDialog(true)}>
-                    <Plus className="w-4 h-4" />
-                    Invite Agent
-                  </Button>
-                </div>
-                <div className="divide-y divide-gray-50">
-                  {agents.length === 0 ? (
-                    <div className="px-5 py-8 text-center text-gray-400 text-sm">
-                      No agents yet. Invite your team members.
+          {/* ── Team Tab (admin only) ── */}
+          {isAdmin && (
+            <TabsContent value="team">
+              <div className="max-w-2xl space-y-6">
+                <div className="bg-white rounded-xl border border-gray-100 p-5">
+                  <h3 className="font-semibold text-gray-900 mb-4">General</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Team Name</Label>
+                      <Input
+                        value={teamName}
+                        onChange={(e) => setTeamName(e.target.value)}
+                        className="mt-1 max-w-sm"
+                      />
                     </div>
-                  ) : (
-                    agents.map((agent) => (
-                      <div key={agent.id} className="flex items-center gap-3 px-5 py-3">
-                        <Avatar className="w-9 h-9">
-                          <AvatarFallback
-                            style={{ backgroundColor: getAvatarColor(agent.id) }}
-                            className="text-white text-sm font-semibold"
-                          >
-                            {getInitials(agent.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-800">{agent.name}</p>
-                          <p className="text-xs text-gray-400">{agent.email}</p>
+                    <Button onClick={handleSaveTeam} disabled={isSavingTeam} size="sm">
+                      {isSavingTeam ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl border border-gray-100 p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Wifi className="w-5 h-5 text-green-500" />
+                    <h3 className="font-semibold text-gray-900">WhatsApp Connection</h3>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Phone Number ID</Label>
+                      <Input
+                        value={waPhoneId}
+                        onChange={(e) => setWaPhoneId(e.target.value)}
+                        placeholder="123456789012345"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label>Access Token</Label>
+                      <div className="relative mt-1">
+                        <Input
+                          type={showToken ? 'text' : 'password'}
+                          value={waToken}
+                          onChange={(e) => setWaToken(e.target.value)}
+                          placeholder="EAAxxxxxx..."
+                          className="pr-10"
+                        />
+                        <button
+                          onClick={() => setShowToken(!showToken)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Webhook URL (read-only)</Label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Input value={webhookUrl} readOnly className="bg-gray-50 text-gray-500" />
+                        <Button variant="outline" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => copyToClipboard(webhookUrl)}>
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    {team?.webhookVerifyToken && (
+                      <div>
+                        <Label>Verify Token (read-only)</Label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input value={team.webhookVerifyToken} readOnly className="bg-gray-50 text-gray-500 font-mono" />
+                          <Button variant="outline" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => copyToClipboard(team.webhookVerifyToken!)}>
+                            <Copy className="w-4 h-4" />
+                          </Button>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={cn(
-                            'text-xs px-2 py-0.5 rounded-full font-medium capitalize',
-                            agent.role === 'admin' ? 'bg-purple-100 text-purple-700' :
-                            agent.role === 'supervisor' ? 'bg-blue-100 text-blue-700' :
-                            'bg-gray-100 text-gray-600'
-                          )}>
-                            {agent.role}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Button onClick={handleSaveTeam} disabled={isSavingTeam} size="sm">
+                        {isSavingTeam ? 'Saving...' : 'Save Connection'}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleTestConnection} disabled={isTestingConn}>
+                        {isTestingConn ? 'Testing...' : 'Test Connection'}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mt-5 pt-5 border-t border-gray-100">
+                    <p className="text-sm font-medium text-gray-700 mb-3">Setup Guide</p>
+                    <ol className="space-y-2">
+                      {[
+                        'Create a Meta App at developers.facebook.com',
+                        'Add WhatsApp product to your app',
+                        'Copy your Phone Number ID and Access Token above',
+                        'Set the Webhook URL in your Meta App settings',
+                        'Use the Verify Token to verify the webhook',
+                        'Click "Test Connection" to verify everything works',
+                      ].map((step, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary-100 text-primary-700 text-xs flex items-center justify-center font-semibold mt-0.5">
+                            {i + 1}
                           </span>
-                          <span className={cn(
-                            'text-xs px-2 py-0.5 rounded-full',
-                            agent.status === 'online' ? 'bg-green-100 text-green-700' :
-                            agent.status === 'busy' ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-gray-100 text-gray-500'
-                          )}>
-                            {agent.status}
-                          </span>
-                          {currentUser?.role === 'admin' && (
+                          {step}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          )}
+
+          {/* ── Agents Tab (admin only) ── */}
+          {isAdmin && (
+            <TabsContent value="agents">
+              <div className="max-w-3xl">
+                <div className="bg-white rounded-xl border border-gray-100">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <h3 className="font-semibold text-gray-900">Team Members ({agents.length})</h3>
+                    <Button size="sm" className="gap-1.5" onClick={() => setShowAgentDialog(true)}>
+                      <Plus className="w-4 h-4" />
+                      Invite Agent
+                    </Button>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {agents.length === 0 ? (
+                      <div className="px-5 py-8 text-center text-gray-400 text-sm">
+                        No agents yet. Invite your team members.
+                      </div>
+                    ) : (
+                      agents.map((agent) => (
+                        <div key={agent.id} className="flex items-center gap-3 px-5 py-3">
+                          <Avatar className="w-9 h-9">
+                            <AvatarFallback
+                              style={{ backgroundColor: getAvatarColor(agent.id) }}
+                              className="text-white text-sm font-semibold"
+                            >
+                              {getInitials(agent.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-800">{agent.name}</p>
+                            <p className="text-xs text-gray-400">{agent.email}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              'text-xs px-2 py-0.5 rounded-full font-medium capitalize',
+                              agent.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                              agent.role === 'supervisor' ? 'bg-blue-100 text-blue-700' :
+                              'bg-gray-100 text-gray-600'
+                            )}>
+                              {agent.role}
+                            </span>
+                            <span className={cn(
+                              'text-xs px-2 py-0.5 rounded-full',
+                              agent.status === 'online' ? 'bg-green-100 text-green-700' :
+                              agent.status === 'busy' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-gray-100 text-gray-500'
+                            )}>
+                              {agent.status}
+                            </span>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400">
@@ -491,110 +680,114 @@ export default function SettingsPage() {
                                 )}
                               </DropdownMenuContent>
                             </DropdownMenu>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </TabsContent>
+            </TabsContent>
+          )}
 
-          {/* ── Labels Tab ── */}
-          <TabsContent value="labels">
-            <div className="max-w-2xl">
-              <div className="bg-white rounded-xl border border-gray-100">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                  <h3 className="font-semibold text-gray-900">Labels ({labels.length})</h3>
-                  <Button
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => { setEditingLabel(null); setLabelForm({ name: '', color: LABEL_COLORS[0] }); setShowLabelDialog(true) }}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Label
-                  </Button>
-                </div>
-                <div className="p-4">
-                  {labels.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-4">No labels yet</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {labels.map((label) => (
-                        <div key={label.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white text-sm font-medium group" style={{ backgroundColor: label.color }}>
-                          {label.name}
-                          <button
-                            onClick={() => { setEditingLabel(label); setLabelForm({ name: label.name, color: label.color }); setShowLabelDialog(true) }}
-                            className="opacity-0 group-hover:opacity-100 hover:bg-white/20 rounded-full p-0.5 transition-all"
-                          >
-                            <Edit className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteLabel(label.id)}
-                            className="opacity-0 group-hover:opacity-100 hover:bg-white/20 rounded-full p-0.5 transition-all"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* ── Canned Responses Tab ── */}
-          <TabsContent value="canned">
-            <div className="max-w-3xl">
-              <div className="bg-white rounded-xl border border-gray-100">
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                  <h3 className="font-semibold text-gray-900">Canned Responses ({cannedResponses.length})</h3>
-                  <Button
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => { setEditingCanned(null); setCannedForm({ shortcut: '', content: '' }); setShowCannedDialog(true) }}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Response
-                  </Button>
-                </div>
-                <div className="divide-y divide-gray-50">
-                  {cannedResponses.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-8">No canned responses yet. Create shortcuts for common replies.</p>
-                  ) : (
-                    cannedResponses.map((cr) => (
-                      <div key={cr.id} className="flex items-start gap-3 px-5 py-3">
-                        <span className="flex-shrink-0 text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-1 rounded mt-0.5">
-                          /{cr.shortcut}
-                        </span>
-                        <p className="flex-1 text-sm text-gray-600 line-clamp-2">{cr.content}</p>
-                        <div className="flex gap-1 flex-shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => { setEditingCanned(cr); setCannedForm({ shortcut: cr.shortcut, content: cr.content }); setShowCannedDialog(true) }}
-                          >
-                            <Edit className="w-3.5 h-3.5 text-gray-400" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={() => handleDeleteCanned(cr.id)}
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" />
-                          </Button>
-                        </div>
+          {/* ── Labels Tab (admin only) ── */}
+          {isAdmin && (
+            <TabsContent value="labels">
+              <div className="max-w-2xl">
+                <div className="bg-white rounded-xl border border-gray-100">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <h3 className="font-semibold text-gray-900">Labels ({labels.length})</h3>
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => { setEditingLabel(null); setLabelForm({ name: '', color: LABEL_COLORS[0] }); setShowLabelDialog(true) }}
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Label
+                    </Button>
+                  </div>
+                  <div className="p-4">
+                    {labels.length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-4">No labels yet</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {labels.map((label) => (
+                          <div key={label.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white text-sm font-medium group" style={{ backgroundColor: label.color }}>
+                            {label.name}
+                            <button
+                              onClick={() => { setEditingLabel(label); setLabelForm({ name: label.name, color: label.color }); setShowLabelDialog(true) }}
+                              className="opacity-0 group-hover:opacity-100 hover:bg-white/20 rounded-full p-0.5 transition-all"
+                            >
+                              <Edit className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteLabel(label.id)}
+                              className="opacity-0 group-hover:opacity-100 hover:bg-white/20 rounded-full p-0.5 transition-all"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                    ))
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </TabsContent>
+            </TabsContent>
+          )}
+
+          {/* ── Canned Responses Tab (admin only) ── */}
+          {isAdmin && (
+            <TabsContent value="canned">
+              <div className="max-w-3xl">
+                <div className="bg-white rounded-xl border border-gray-100">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <h3 className="font-semibold text-gray-900">Canned Responses ({cannedResponses.length})</h3>
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => { setEditingCanned(null); setCannedForm({ shortcut: '', content: '' }); setShowCannedDialog(true) }}
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Response
+                    </Button>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {cannedResponses.length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-8">No canned responses yet. Create shortcuts for common replies.</p>
+                    ) : (
+                      cannedResponses.map((cr) => (
+                        <div key={cr.id} className="flex items-start gap-3 px-5 py-3">
+                          <span className="flex-shrink-0 text-xs font-semibold text-primary-600 bg-primary-50 px-2 py-1 rounded mt-0.5">
+                            /{cr.shortcut}
+                          </span>
+                          <p className="flex-1 text-sm text-gray-600 line-clamp-2">{cr.content}</p>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => { setEditingCanned(cr); setCannedForm({ shortcut: cr.shortcut, content: cr.content }); setShowCannedDialog(true) }}
+                            >
+                              <Edit className="w-3.5 h-3.5 text-gray-400" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleDeleteCanned(cr.id)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          )}
 
           {/* ── Notifications Tab ── */}
           <TabsContent value="notifications">
