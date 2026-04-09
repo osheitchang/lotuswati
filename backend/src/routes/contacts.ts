@@ -324,7 +324,22 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Contact not found' });
     }
 
-    await prisma.contact.delete({ where: { id: req.params.id } });
+    await prisma.$transaction(async (tx) => {
+      // Collect conversation IDs so we can delete child records
+      const conversations = await tx.conversation.findMany({
+        where: { contactId: contact.id },
+        select: { id: true },
+      });
+      const conversationIds = conversations.map((c) => c.id);
+
+      // Delete in dependency order
+      await tx.broadcastContact.deleteMany({ where: { contactId: contact.id } });
+      await tx.note.deleteMany({ where: { conversationId: { in: conversationIds } } });
+      await tx.conversationLabel.deleteMany({ where: { conversationId: { in: conversationIds } } });
+      await tx.message.deleteMany({ where: { conversationId: { in: conversationIds } } });
+      await tx.conversation.deleteMany({ where: { id: { in: conversationIds } } });
+      await tx.contact.delete({ where: { id: contact.id } });
+    });
 
     return res.json({ message: 'Contact deleted successfully' });
   } catch (err) {
