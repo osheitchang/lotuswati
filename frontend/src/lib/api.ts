@@ -68,7 +68,7 @@ export const conversationsApi = {
   list: (params?: { status?: string; assignedTo?: string; label?: string; search?: string; page?: number; limit?: number }) =>
     api.get('/conversations', { params }),
   get: (id: string) => api.get(`/conversations/${id}`),
-  create: (data: { contactId?: string; phone?: string; message?: string }) =>
+  create: (data: { contactId?: string; phone?: string; message?: string; templateId?: string; templateName?: string; templateLanguage?: string; templateVariables?: Record<string, string> }) =>
     api.post('/conversations', data),
   getMessages: (conversationId: string, params?: { page?: number; limit?: number }) =>
     api.get(`/conversations/${conversationId}/messages`, { params }),

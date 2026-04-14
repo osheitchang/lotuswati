@@ -24,8 +24,9 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { conversationsApi } from '@/lib/api'
+import { conversationsApi, templatesApi } from '@/lib/api'
 import { toast } from '@/components/ui/use-toast'
+import { Template } from '@/types'
 
 const statusTabs = [
   { value: 'all', label: 'All' },
@@ -55,8 +56,30 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null)
   const [showNewDialog, setShowNewDialog] = useState(false)
   const [newPhone, setNewPhone] = useState('')
-  const [newMessage, setNewMessage] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+  const [approvedTemplates, setApprovedTemplates] = useState<Template[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateVars, setTemplateVars] = useState<Record<string, string>>({})
+
+  function extractVariables(body: string): number[] {
+    const indices: number[] = []
+    const seen = new Set<number>()
+    const re = /\{\{(\d+)\}\}/g
+    let m
+    while ((m = re.exec(body)) !== null) {
+      const n = Number(m[1])
+      if (!seen.has(n)) { seen.add(n); indices.push(n) }
+    }
+    return indices.sort((a, b) => a - b)
+  }
+
+  useEffect(() => {
+    if (showNewDialog) {
+      templatesApi.list({ status: 'approved' }).then((res) => {
+        setApprovedTemplates(res.data.templates || res.data || [])
+      }).catch(() => {})
+    }
+  }, [showNewDialog])
 
   useEffect(() => {
     loadConversations()
@@ -77,15 +100,18 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
     if (!phone) return
     setIsCreating(true)
     try {
-      const response = await conversationsApi.create({
-        phone,
-        message: newMessage.trim() || undefined,
-      })
+      const payload: Parameters<typeof conversationsApi.create>[0] = { phone }
+      if (selectedTemplateId) {
+        payload.templateId = selectedTemplateId
+        payload.templateVariables = templateVars
+      }
+      const response = await conversationsApi.create(payload)
       const conversation = response.data.conversation || response.data
       toast({ title: 'Conversation started' })
       setShowNewDialog(false)
       setNewPhone('')
-      setNewMessage('')
+      setSelectedTemplateId('')
+      setTemplateVars({})
       loadConversations()
       selectConversation(conversation.id)
     } catch (error: any) {
@@ -96,7 +122,8 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
         if (existingId) {
           setShowNewDialog(false)
           setNewPhone('')
-          setNewMessage('')
+          setSelectedTemplateId('')
+          setTemplateVars({})
           selectConversation(existingId)
           toast({ title: 'Existing conversation opened' })
         } else {
@@ -279,7 +306,10 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
         )}
       </div>
       {/* ── New Conversation Dialog ── */}
-      <Dialog open={showNewDialog} onOpenChange={(open) => { setShowNewDialog(open); if (!open) { setNewPhone(''); setNewMessage('') } }}>
+      <Dialog open={showNewDialog} onOpenChange={(open) => {
+        setShowNewDialog(open)
+        if (!open) { setNewPhone(''); setSelectedTemplateId(''); setTemplateVars({}) }
+      }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>New Conversation</DialogTitle>
@@ -291,27 +321,59 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
                 id="new-phone"
                 value={newPhone}
                 onChange={(e) => setNewPhone(e.target.value)}
-                placeholder="e.g. 1234567890 (with country code)"
+                placeholder="e.g. 628123456789 (with country code)"
                 className="mt-1"
-                onKeyDown={(e) => e.key === 'Enter' && !newMessage && handleCreateConversation()}
               />
-              <p className="text-xs text-gray-400 mt-1">Digits only — include the country code, e.g. 628123456789</p>
+              <p className="text-xs text-gray-400 mt-1">Digits only, include country code</p>
             </div>
             <div>
-              <Label htmlFor="new-message">First Message <span className="text-gray-400 font-normal">(optional)</span></Label>
-              <textarea
-                id="new-message"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                placeholder="Hi! How can I help you today?"
-                className="w-full mt-1 border rounded-md px-3 py-2 text-sm min-h-[72px] resize-none focus:outline-none focus:ring-1 focus:ring-primary-500 border-gray-200"
-                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleCreateConversation() }}
-              />
+              <Label>Template <span className="text-gray-400 font-normal">(required to send first message)</span></Label>
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => { setSelectedTemplateId(e.target.value); setTemplateVars({}) }}
+                className="w-full mt-1 border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+              >
+                <option value="">— No template, just create conversation —</option>
+                {approvedTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name} ({t.language})</option>
+                ))}
+              </select>
             </div>
+            {selectedTemplateId && (() => {
+              const tpl = approvedTemplates.find((t) => t.id === selectedTemplateId)
+              if (!tpl) return null
+              const vars = extractVariables(tpl.body)
+              if (vars.length === 0) return (
+                <div className="bg-gray-50 rounded-lg p-2.5 text-xs text-gray-600">{tpl.body}</div>
+              )
+              return (
+                <div className="space-y-2">
+                  <div className="bg-gray-50 rounded-lg p-2.5 text-xs text-gray-600">{tpl.body}</div>
+                  {vars.map((n) => (
+                    <div key={n}>
+                      <Label className="text-xs">Variable {`{{${n}}}`}</Label>
+                      <Input
+                        value={templateVars[String(n)] || ''}
+                        onChange={(e) => setTemplateVars((prev) => ({ ...prev, [String(n)]: e.target.value }))}
+                        placeholder={`Value for {{${n}}}`}
+                        className="mt-0.5 h-8 text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancel</Button>
-            <Button onClick={handleCreateConversation} disabled={isCreating || !newPhone.replace(/\D/g, '')}>
+            <Button
+              onClick={handleCreateConversation}
+              disabled={isCreating || !newPhone.replace(/\D/g, '') || (!!selectedTemplateId && (() => {
+                const tpl = approvedTemplates.find((t) => t.id === selectedTemplateId)
+                if (!tpl) return false
+                return extractVariables(tpl.body).some((n) => !templateVars[String(n)]?.trim())
+              })())}
+            >
               {isCreating ? 'Starting...' : 'Start Conversation'}
             </Button>
           </DialogFooter>
