@@ -14,8 +14,8 @@ export default function LoginPage() {
   const { login, register, isLoading } = useAuthStore()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [formData, setFormData] = useState({
-    email: 'admin@demo.com',
-    password: 'demo1234',
+    email: '',
+    password: '',
     teamName: '',
     name: '',
   })
