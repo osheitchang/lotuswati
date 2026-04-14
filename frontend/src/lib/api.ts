@@ -110,6 +110,7 @@ export const templatesApi = {
   update: (id: string, data: any) => api.patch(`/templates/${id}`, data),
   delete: (id: string) => api.delete(`/templates/${id}`),
   submit: (id: string) => api.post(`/templates/${id}/submit`),
+  sync: () => api.post('/templates/sync'),
 }
 
 // Broadcasts API

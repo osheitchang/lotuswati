@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, FileText, Edit, Trash2, Send, Filter } from 'lucide-react'
+import { Plus, FileText, Edit, Trash2, Send, Filter, RefreshCw } from 'lucide-react'
 import { templatesApi } from '@/lib/api'
 import { Template } from '@/types'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import { toast } from '@/components/ui/use-toast'
 export function TemplateList() {
   const [templates, setTemplates] = useState<Template[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [filterCategory, setFilterCategory] = useState('')
@@ -54,6 +55,23 @@ export function TemplateList() {
     }
   }
 
+  const handleSync = async () => {
+    setIsSyncing(true)
+    try {
+      const response = await templatesApi.sync()
+      toast({ title: `Synced ${response.data.synced} templates from Meta` })
+      loadTemplates()
+    } catch (error: any) {
+      toast({
+        title: 'Sync failed',
+        description: error.response?.data?.error || 'Could not reach Meta API',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
   const handleSubmit = async (id: string) => {
     try {
       await templatesApi.submit(id)
@@ -76,10 +94,16 @@ export function TemplateList() {
             <h1 className="text-xl font-semibold text-gray-900">Templates</h1>
             <p className="text-sm text-gray-500 mt-0.5">Manage your WhatsApp message templates</p>
           </div>
-          <Button className="gap-1.5" onClick={() => { setEditingTemplate(null); setShowModal(true) }}>
-            <Plus className="w-4 h-4" />
-            New Template
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" className="gap-1.5" onClick={handleSync} disabled={isSyncing}>
+              <RefreshCw className={cn('w-4 h-4', isSyncing && 'animate-spin')} />
+              {isSyncing ? 'Syncing...' : 'Sync from Meta'}
+            </Button>
+            <Button className="gap-1.5" onClick={() => { setEditingTemplate(null); setShowModal(true) }}>
+              <Plus className="w-4 h-4" />
+              New Template
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}

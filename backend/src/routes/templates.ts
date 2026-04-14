@@ -177,6 +177,127 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/templates/sync — pull approved templates from Meta and upsert locally
+router.post('/sync', async (req: Request, res: Response) => {
+  try {
+    const accessToken = process.env.WA_ACCESS_TOKEN;
+    const wabaId = process.env.WA_BUSINESS_ACCOUNT_ID;
+
+    if (!accessToken || !wabaId) {
+      return res.status(503).json({
+        error: 'WhatsApp credentials not configured. Set WA_ACCESS_TOKEN and WA_BUSINESS_ACCOUNT_ID.',
+      });
+    }
+
+    const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?limit=100&fields=name,status,category,language,components`;
+    const metaRes = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!metaRes.ok) {
+      const errBody = await metaRes.json().catch(() => ({}));
+      console.error('[Templates] Meta API error:', errBody);
+      return res.status(502).json({ error: 'Meta API request failed', details: errBody });
+    }
+
+    type MetaComponent = {
+      type: string;
+      format?: string;
+      text?: string;
+      buttons?: Array<{ type: string; text: string; url?: string; phone_number?: string }>;
+    };
+    type MetaTemplate = {
+      name: string;
+      status: string;
+      category: string;
+      language: string;
+      components: MetaComponent[];
+    };
+
+    const payload = (await metaRes.json()) as { data: MetaTemplate[] };
+    const metaTemplates = payload.data || [];
+
+    let synced = 0;
+    const teamId = req.user!.teamId;
+
+    for (const t of metaTemplates) {
+      const bodyComp = t.components.find((c) => c.type === 'BODY');
+      if (!bodyComp?.text) continue; // skip templates with no body
+
+      const headerComp = t.components.find((c) => c.type === 'HEADER');
+      const footerComp = t.components.find((c) => c.type === 'FOOTER');
+      const buttonsComp = t.components.find((c) => c.type === 'BUTTONS');
+
+      const headerType = headerComp?.format ?? null;
+      const headerValue = headerComp?.format === 'TEXT' ? (headerComp.text ?? null) : null;
+      const footer = footerComp?.text ?? null;
+      const buttons = (buttonsComp?.buttons ?? []).map((b) => ({
+        type: b.type,
+        text: b.text,
+        ...(b.url ? { url: b.url } : {}),
+        ...(b.phone_number ? { phone_number: b.phone_number } : {}),
+      }));
+
+      const statusMap: Record<string, string> = {
+        APPROVED: 'approved',
+        REJECTED: 'rejected',
+        PENDING: 'pending',
+        PAUSED: 'pending',
+        DISABLED: 'rejected',
+      };
+      const status = statusMap[t.status.toUpperCase()] ?? 'pending';
+
+      const validCategories = ['MARKETING', 'UTILITY', 'AUTHENTICATION'];
+      const category = validCategories.includes(t.category.toUpperCase())
+        ? t.category.toUpperCase()
+        : 'UTILITY';
+
+      const existing = await prisma.template.findFirst({
+        where: { name: t.name, teamId },
+      });
+
+      if (existing) {
+        await prisma.template.update({
+          where: { id: existing.id },
+          data: {
+            status,
+            category,
+            language: t.language,
+            body: bodyComp.text,
+            headerType,
+            headerValue,
+            footer,
+            buttons: JSON.stringify(buttons),
+          },
+        });
+      } else {
+        await prisma.template.create({
+          data: {
+            name: t.name,
+            category,
+            language: t.language,
+            body: bodyComp.text,
+            headerType,
+            headerValue,
+            footer,
+            buttons: JSON.stringify(buttons),
+            status,
+            waTemplateId: t.name,
+            teamId,
+          },
+        });
+      }
+      synced++;
+    }
+
+    console.log(`[Templates] Synced ${synced} templates for team ${teamId}`);
+    return res.json({ message: `Synced ${synced} templates from Meta`, synced });
+  } catch (err) {
+    console.error('[Templates] Sync error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/templates/:id/submit
 // Submit template to WhatsApp for approval (mock: instantly approves)
 router.post('/:id/submit', async (req: Request, res: Response) => {

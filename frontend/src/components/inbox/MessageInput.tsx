@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, KeyboardEvent } from 'react'
 import {
   Send,
   Paperclip,
-  FileText,
   StickyNote,
   Smile,
   X,
@@ -13,10 +12,21 @@ import {
   Music,
   Video,
   Loader2,
+  FileText,
+  AlertCircle,
 } from 'lucide-react'
 import { useInboxStore } from '@/store/inboxStore'
 import { useAppStore } from '@/store/appStore'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { toast } from '@/components/ui/use-toast'
 import { CannedResponse, Template } from '@/types'
@@ -61,26 +71,50 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/** Extract {{1}}, {{2}}, … variable indices from a template body */
+function extractVariables(body: string): number[] {
+  const matches = body.match(/\{\{(\d+)\}\}/g) || []
+  const indices = matches.map((m) => parseInt(m.replace(/\{\{|\}\}/g, ''), 10))
+  return [...new Set(indices)].sort((a, b) => a - b)
+}
+
+/** Replace {{1}}, {{2}}, … with provided values */
+function resolveVariables(body: string, values: Record<number, string>): string {
+  return body.replace(/\{\{(\d+)\}\}/g, (_, idx) => values[parseInt(idx, 10)] ?? `{{${idx}}}`)
+}
+
 interface PendingFile {
   file: File
-  preview?: string // for images
+  preview?: string
 }
 
 export function MessageInput({ conversationId }: MessageInputProps) {
-  const { sendMessage } = useInboxStore()
+  const { sendMessage, messages } = useInboxStore()
   const { cannedResponses } = useAppStore()
   const [content, setContent] = useState('')
   const [isNote, setIsNote] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [showCannedResponses, setShowCannedResponses] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [showTemplates, setShowTemplates] = useState(false)
-  const [templates, setTemplates] = useState<Template[]>([])
   const [cannedFilter, setCannedFilter] = useState('')
+
+  // Template picker state
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
+  const [templateVars, setTemplateVars] = useState<Record<number, string>>({})
+
+  // File upload state
   const [pendingFile, setPendingFile] = useState<PendingFile | null>(null)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const conversationMessages = messages[conversationId] || []
+  const hasNoOutboundMessages = conversationMessages.length === 0 ||
+    conversationMessages.every((m) => m.fromType === 'contact')
 
   // Auto-resize textarea
   useEffect(() => {
@@ -90,7 +124,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
     }
   }, [content])
 
-  // Detect "/" for canned responses
+  // Canned response trigger
   useEffect(() => {
     if (content.startsWith('/')) {
       setShowCannedResponses(true)
@@ -106,21 +140,62 @@ export function MessageInput({ conversationId }: MessageInputProps) {
       cr.content.toLowerCase().includes(cannedFilter.toLowerCase())
   )
 
+  // ── Template picker ──────────────────────────────────────────────────────────
+
+  const openTemplatePicker = async () => {
+    setShowEmojiPicker(false)
+    setShowTemplatePicker(true)
+    if (templates.length > 0) return
+    setIsLoadingTemplates(true)
+    try {
+      const response = await templatesApi.list({ status: 'approved' })
+      setTemplates(response.data.templates || response.data || [])
+    } catch {
+      toast({ title: 'Failed to load templates', variant: 'destructive' })
+    } finally {
+      setIsLoadingTemplates(false)
+    }
+  }
+
+  const handlePickTemplate = (template: Template) => {
+    const vars = extractVariables(template.body)
+    setSelectedTemplate(template)
+    setTemplateVars(Object.fromEntries(vars.map((i) => [i, ''])))
+    setShowTemplatePicker(false)
+  }
+
+  const handleSendTemplate = async () => {
+    if (!selectedTemplate) return
+    setIsSending(true)
+    try {
+      const resolved = resolveVariables(selectedTemplate.body, templateVars)
+      await sendMessage(conversationId, resolved, 'template', false)
+      setSelectedTemplate(null)
+      setTemplateVars({})
+      toast({ title: 'Template sent' })
+    } catch (error: any) {
+      toast({
+        title: 'Failed to send template',
+        description: error.response?.data?.message || 'An error occurred',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  // ── File upload ──────────────────────────────────────────────────────────────
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     if (file.size > 16 * 1024 * 1024) {
       toast({ title: 'File too large', description: 'Maximum file size is 16MB', variant: 'destructive' })
       return
     }
-
     const pending: PendingFile = { file }
-    if (file.type.startsWith('image/')) {
-      pending.preview = URL.createObjectURL(file)
-    }
+    if (file.type.startsWith('image/')) pending.preview = URL.createObjectURL(file)
     setPendingFile(pending)
-    // Reset the input so the same file can be re-selected
     e.target.value = ''
   }
 
@@ -132,28 +207,19 @@ export function MessageInput({ conversationId }: MessageInputProps) {
 
   const handleSendFile = async () => {
     if (!pendingFile || isSending) return
-
     setIsSending(true)
     setUploadProgress(0)
-
     try {
       const formData = new FormData()
       formData.append('file', pendingFile.file)
-
-      // Simulate progress while uploading (axios doesn't expose upload progress easily through our wrapper)
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => (prev !== null && prev < 85 ? prev + 10 : prev))
       }, 200)
-
       const response = await mediaApi.uploadMedia(formData)
       clearInterval(progressInterval)
       setUploadProgress(100)
-
       const { url, mimeType } = response.data
-      const msgType = getMessageType(mimeType)
-
-      await sendMessage(conversationId, content.trim() || undefined, msgType, false, url)
-
+      await sendMessage(conversationId, content.trim() || undefined, getMessageType(mimeType), false, url)
       setContent('')
       clearPendingFile()
       textareaRef.current?.focus()
@@ -169,15 +235,12 @@ export function MessageInput({ conversationId }: MessageInputProps) {
     }
   }
 
-  const handleSend = async () => {
-    if (pendingFile) {
-      await handleSendFile()
-      return
-    }
+  // ── Text send ────────────────────────────────────────────────────────────────
 
+  const handleSend = async () => {
+    if (pendingFile) { await handleSendFile(); return }
     const trimmed = content.trim()
     if (!trimmed || isSending) return
-
     setIsSending(true)
     try {
       await sendMessage(conversationId, trimmed, 'text', isNote)
@@ -196,10 +259,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
   const insertCannedResponse = (cr: CannedResponse) => {
@@ -214,42 +274,35 @@ export function MessageInput({ conversationId }: MessageInputProps) {
     textareaRef.current?.focus()
   }
 
-  const handleTemplateSelect = async (template: Template) => {
-    try {
-      await sendMessage(conversationId, template.body, 'template', false)
-      setShowTemplates(false)
-      toast({ title: 'Template sent' })
-    } catch (error: any) {
-      toast({
-        title: 'Failed to send template',
-        description: error.response?.data?.message || 'An error occurred',
-        variant: 'destructive',
-      })
-    }
-  }
-
-  const loadTemplates = async () => {
-    if (templates.length > 0) {
-      setShowTemplates(true)
-      return
-    }
-    try {
-      const response = await templatesApi.list({ status: 'approved' })
-      setTemplates(response.data.templates || response.data || [])
-      setShowTemplates(true)
-    } catch {
-      toast({ title: 'Failed to load templates', variant: 'destructive' })
-    }
-  }
-
   const canSend = pendingFile ? !isSending : (!!content.trim() && !isSending)
 
+  const templateVariableIndices = selectedTemplate ? extractVariables(selectedTemplate.body) : []
+
   return (
-    <div className={cn(
-      'border-t bg-white',
-      isNote && 'bg-yellow-50 border-yellow-200'
-    )}>
-      {/* Note indicator */}
+    <div className={cn('border-t bg-white', isNote && 'bg-yellow-50 border-yellow-200')}>
+
+      {/* ── No-outbound-messages notice ── */}
+      {hasNoOutboundMessages && conversationMessages.length >= 0 && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border-b border-amber-200">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-amber-800 font-medium">
+              This customer hasn't messaged you yet.
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              WhatsApp requires an approved template to initiate a conversation.
+            </p>
+          </div>
+          <button
+            onClick={openTemplatePicker}
+            className="flex-shrink-0 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Use Template
+          </button>
+        </div>
+      )}
+
+      {/* ── Note indicator ── */}
       {isNote && (
         <div className="flex items-center gap-2 px-4 pt-2 text-xs text-yellow-700">
           <StickyNote className="w-3.5 h-3.5" />
@@ -257,12 +310,10 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
-      {/* Canned responses popup */}
+      {/* ── Canned responses popup ── */}
       {showCannedResponses && filteredCanned.length > 0 && (
         <div className="border-t border-gray-100 max-h-48 overflow-y-auto">
-          <div className="px-3 py-1.5 text-xs font-medium text-gray-400 bg-gray-50">
-            Canned Responses
-          </div>
+          <div className="px-3 py-1.5 text-xs font-medium text-gray-400 bg-gray-50">Canned Responses</div>
           {filteredCanned.map((cr) => (
             <button
               key={cr.id}
@@ -278,16 +329,12 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
-      {/* Emoji picker */}
+      {/* ── Emoji picker ── */}
       {showEmojiPicker && (
         <div className="border-t border-gray-100 p-3">
           <div className="flex flex-wrap gap-2">
             {COMMON_EMOJIS.map((emoji) => (
-              <button
-                key={emoji}
-                className="text-xl hover:bg-gray-100 rounded p-1 transition-colors"
-                onClick={() => insertEmoji(emoji)}
-              >
+              <button key={emoji} className="text-xl hover:bg-gray-100 rounded p-1 transition-colors" onClick={() => insertEmoji(emoji)}>
                 {emoji}
               </button>
             ))}
@@ -295,40 +342,44 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
-      {/* Template modal */}
-      {showTemplates && (
+      {/* ── Template picker panel ── */}
+      {showTemplatePicker && (
         <div className="border-t border-gray-100 max-h-64 overflow-y-auto">
-          <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b">
-            <span className="text-xs font-medium text-gray-500">Choose Template</span>
-            <button onClick={() => setShowTemplates(false)} className="text-gray-400 hover:text-gray-600 text-xs">Close</button>
+          <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b sticky top-0">
+            <span className="text-xs font-medium text-gray-500">Approved Templates</span>
+            <button onClick={() => setShowTemplatePicker(false)} className="text-gray-400 hover:text-gray-600 text-xs">Close</button>
           </div>
-          {templates.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">No approved templates</p>
+          {isLoadingTemplates ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+            </div>
+          ) : templates.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">No approved templates. Sync from Meta or create one.</p>
           ) : (
             templates.map((t) => (
               <button
                 key={t.id}
-                className="w-full text-left px-4 py-2.5 hover:bg-gray-50 border-b border-gray-100"
-                onClick={() => handleTemplateSelect(t)}
+                className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 transition-colors"
+                onClick={() => handlePickTemplate(t)}
               >
-                <p className="text-sm font-medium text-gray-800">{t.name}</p>
-                <p className="text-xs text-gray-500 truncate mt-0.5">{t.body}</p>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <p className="text-sm font-medium text-gray-800">{t.name}</p>
+                  <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{t.category}</span>
+                  <span className="text-xs text-gray-400">{t.language}</span>
+                </div>
+                <p className="text-xs text-gray-500 line-clamp-2">{t.body}</p>
               </button>
             ))
           )}
         </div>
       )}
 
-      {/* Pending file preview */}
+      {/* ── Pending file preview ── */}
       {pendingFile && (
         <div className="border-t border-gray-100 px-4 py-2">
           <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
             {pendingFile.preview ? (
-              <img
-                src={pendingFile.preview}
-                alt="Preview"
-                className="w-10 h-10 rounded object-cover flex-shrink-0"
-              />
+              <img src={pendingFile.preview} alt="Preview" className="w-10 h-10 rounded object-cover flex-shrink-0" />
             ) : (
               <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center flex-shrink-0 text-gray-500">
                 {getFileIcon(pendingFile.file.type)}
@@ -339,18 +390,12 @@ export function MessageInput({ conversationId }: MessageInputProps) {
               <p className="text-xs text-gray-500">{formatBytes(pendingFile.file.size)}</p>
               {uploadProgress !== null && (
                 <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary-500 transition-all duration-200"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
+                  <div className="h-full bg-primary-500 transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
                 </div>
               )}
             </div>
             {!isSending && (
-              <button
-                onClick={clearPendingFile}
-                className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-              >
+              <button onClick={clearPendingFile} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
                 <X className="w-4 h-4" />
               </button>
             )}
@@ -358,21 +403,14 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept={ACCEPT_TYPES}
-        className="hidden"
-        onChange={handleFileSelect}
-      />
+      {/* ── Hidden file input ── */}
+      <input ref={fileInputRef} type="file" accept={ACCEPT_TYPES} className="hidden" onChange={handleFileSelect} />
 
-      {/* Main input */}
+      {/* ── Main input row ── */}
       <div className="flex items-end gap-2 px-4 py-3">
-        {/* Toolbar */}
         <div className="flex items-center gap-1 mb-1">
           <button
-            onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowTemplates(false) }}
+            onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowTemplatePicker(false) }}
             className={cn('p-1.5 rounded hover:bg-gray-100 transition-colors', showEmojiPicker && 'bg-gray-100')}
             title="Emoji"
             disabled={isSending}
@@ -380,7 +418,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
             <Smile className="w-4 h-4 text-gray-500" />
           </button>
           <button
-            onClick={() => { fileInputRef.current?.click(); setShowEmojiPicker(false); setShowTemplates(false) }}
+            onClick={() => { fileInputRef.current?.click(); setShowEmojiPicker(false); setShowTemplatePicker(false) }}
             className={cn('p-1.5 rounded hover:bg-gray-100 transition-colors', pendingFile && 'bg-gray-100')}
             title="Attach file"
             disabled={isSending}
@@ -388,8 +426,8 @@ export function MessageInput({ conversationId }: MessageInputProps) {
             <Paperclip className="w-4 h-4 text-gray-500" />
           </button>
           <button
-            onClick={() => { loadTemplates(); setShowEmojiPicker(false) }}
-            className={cn('p-1.5 rounded hover:bg-gray-100 transition-colors', showTemplates && 'bg-gray-100')}
+            onClick={openTemplatePicker}
+            className={cn('p-1.5 rounded hover:bg-gray-100 transition-colors', showTemplatePicker && 'bg-gray-100')}
             title="Templates"
             disabled={isSending}
           >
@@ -405,48 +443,34 @@ export function MessageInput({ conversationId }: MessageInputProps) {
           </button>
         </div>
 
-        {/* Textarea */}
         <textarea
           ref={textareaRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={
-            pendingFile
-              ? 'Add a caption (optional)...'
-              : isNote
-              ? 'Write an internal note...'
-              : 'Type a message... (/ for canned responses)'
+            pendingFile ? 'Add a caption (optional)...'
+            : isNote ? 'Write an internal note...'
+            : 'Type a message... (/ for canned responses)'
           }
           className={cn(
             'flex-1 resize-none text-sm border rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary-400 placeholder:text-gray-400 min-h-[38px] max-h-[120px]',
-            isNote
-              ? 'bg-yellow-50 border-yellow-300 focus:ring-yellow-400'
-              : 'bg-gray-50 border-gray-200'
+            isNote ? 'bg-yellow-50 border-yellow-300 focus:ring-yellow-400' : 'bg-gray-50 border-gray-200'
           )}
           rows={1}
           disabled={isSending}
         />
 
-        {/* Send button */}
         <Button
           onClick={handleSend}
           disabled={!canSend}
           size="icon"
-          className={cn(
-            'h-9 w-9 flex-shrink-0 rounded-xl transition-all',
-            !canSend && 'opacity-50'
-          )}
+          className={cn('h-9 w-9 flex-shrink-0 rounded-xl transition-all', !canSend && 'opacity-50')}
         >
-          {isSending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Send className="w-4 h-4" />
-          )}
+          {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
         </Button>
       </div>
 
-      {/* Character count */}
       {content.length > 800 && (
         <div className="px-4 pb-2 text-right">
           <span className={cn('text-xs', content.length > 1024 ? 'text-red-500' : 'text-gray-400')}>
@@ -454,6 +478,51 @@ export function MessageInput({ conversationId }: MessageInputProps) {
           </span>
         </div>
       )}
+
+      {/* ── Template variable fill-in dialog ── */}
+      <Dialog open={!!selectedTemplate} onOpenChange={(open) => { if (!open) { setSelectedTemplate(null); setTemplateVars({}) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send Template: {selectedTemplate?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* Preview */}
+            <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+              {selectedTemplate ? resolveVariables(selectedTemplate.body, templateVars) : ''}
+            </div>
+
+            {/* Variable inputs */}
+            {templateVariableIndices.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Fill in variables</p>
+                {templateVariableIndices.map((idx) => (
+                  <div key={idx}>
+                    <Label htmlFor={`var-${idx}`} className="text-sm">Variable {`{{${idx}}}`}</Label>
+                    <Input
+                      id={`var-${idx}`}
+                      value={templateVars[idx] ?? ''}
+                      onChange={(e) => setTemplateVars((prev) => ({ ...prev, [idx]: e.target.value }))}
+                      placeholder={`Value for {{${idx}}}`}
+                      className="mt-1"
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400">No variables in this template — ready to send as-is.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setSelectedTemplate(null); setTemplateVars({}) }}>Cancel</Button>
+            <Button
+              onClick={handleSendTemplate}
+              disabled={isSending || templateVariableIndices.some((i) => !templateVars[i]?.trim())}
+            >
+              {isSending ? 'Sending...' : 'Send Template'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
