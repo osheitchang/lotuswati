@@ -102,8 +102,12 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
     try {
       const payload: Parameters<typeof conversationsApi.create>[0] = { phone }
       if (selectedTemplateId) {
-        payload.templateId = selectedTemplateId
-        payload.templateVariables = templateVars
+        const tpl = approvedTemplates.find((t) => t.id === selectedTemplateId)
+        if (tpl) {
+          payload.templateName = tpl.name
+          payload.templateLanguage = tpl.language
+          payload.templateVariables = templateVars
+        }
       }
       const response = await conversationsApi.create(payload)
       const conversation = response.data.conversation || response.data
