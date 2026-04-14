@@ -114,7 +114,7 @@ router.post('/', async (req: Request, res: Response) => {
       phone: z.string().min(5).optional(),
       message: z.string().optional(),
       templateId: z.string().optional(),
-      variables: z.record(z.string()).optional(),
+      templateVariables: z.record(z.string()).optional(),
       assignedToId: z.string().uuid().optional().nullable(),
     }).refine((d) => d.contactId || d.phone, {
       message: 'Either contactId or phone is required',
@@ -125,7 +125,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Validation failed', details: parsed.error.errors });
     }
 
-    const { contactId, phone, message, templateId, variables, assignedToId } = parsed.data;
+    const { contactId, phone, message, templateId, templateVariables, assignedToId } = parsed.data;
     const teamId = req.user!.teamId;
 
     // Resolve contact — look up by contactId or phone, creating if needed
@@ -186,9 +186,9 @@ router.post('/', async (req: Request, res: Response) => {
         where: { id: templateId, teamId, status: 'approved' },
       });
       if (template) {
-        const bodyParams = Object.keys(variables || {})
+        const bodyParams = Object.keys(templateVariables || {})
           .sort((a, b) => Number(a) - Number(b))
-          .map((k) => ({ type: 'text' as const, text: (variables || {})[k] }));
+          .map((k) => ({ type: 'text' as const, text: (templateVariables || {})[k] }));
         const components = bodyParams.length > 0
           ? [{ type: 'body' as const, parameters: bodyParams }]
           : [];

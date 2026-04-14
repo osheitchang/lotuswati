@@ -103,7 +103,7 @@ export function ConversationList({ onNewConversation }: ConversationListProps) {
       const payload: Parameters<typeof conversationsApi.create>[0] = { phone }
       if (selectedTemplateId) {
         payload.templateId = selectedTemplateId
-        payload.variables = templateVars
+        payload.templateVariables = templateVars
       }
       const response = await conversationsApi.create(payload)
       const conversation = response.data.conversation || response.data
