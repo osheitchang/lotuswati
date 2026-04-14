@@ -113,7 +113,8 @@ router.post('/', async (req: Request, res: Response) => {
       contactId: z.string().uuid().optional(),
       phone: z.string().min(5).optional(),
       message: z.string().optional(),
-      templateId: z.string().optional(),
+      templateName: z.string().optional(),
+      templateLanguage: z.string().default('en'),
       templateVariables: z.record(z.string()).optional(),
       assignedToId: z.string().uuid().optional().nullable(),
     }).refine((d) => d.contactId || d.phone, {
@@ -125,7 +126,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Validation failed', details: parsed.error.errors });
     }
 
-    const { contactId, phone, message, templateId, templateVariables, assignedToId } = parsed.data;
+    const { contactId, phone, message, templateName, templateLanguage, templateVariables, assignedToId } = parsed.data;
     const teamId = req.user!.teamId;
 
     // Resolve contact — look up by contactId or phone, creating if needed
