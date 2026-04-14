@@ -113,7 +113,8 @@ router.post('/', async (req: Request, res: Response) => {
       contactId: z.string().uuid().optional(),
       phone: z.string().min(5).optional(),
       message: z.string().optional(),
-      templateId: z.string().optional(),
+      templateName: z.string().optional(),
+      templateLanguage: z.string().default('en'),
       templateVariables: z.record(z.string()).optional(),
       assignedToId: z.string().uuid().optional().nullable(),
     }).refine((d) => d.contactId || d.phone, {
@@ -125,7 +126,7 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Validation failed', details: parsed.error.errors });
     }
 
-    const { contactId, phone, message, templateId, templateVariables, assignedToId } = parsed.data;
+    const { contactId, phone, message, templateName, templateLanguage, templateVariables, assignedToId } = parsed.data;
     const teamId = req.user!.teamId;
 
     // Resolve contact — look up by contactId or phone, creating if needed
@@ -181,43 +182,38 @@ router.post('/', async (req: Request, res: Response) => {
     });
 
     // Send initial message if provided
-    if (templateId) {
-      const template = await prisma.template.findFirst({
-        where: { id: templateId, teamId, status: 'approved' },
+    if (templateName) {
+      const bodyParams = Object.keys(templateVariables || {})
+        .sort((a, b) => Number(a) - Number(b))
+        .map((k) => ({ type: 'text' as const, text: (templateVariables || {})[k] }));
+      const components = bodyParams.length > 0
+        ? [{ type: 'body' as const, parameters: bodyParams }]
+        : [];
+
+      const { messageId, success } = await sendTemplateMessage(
+        contact.phone,
+        templateName,
+        templateLanguage,
+        components,
+        req.user!.teamId
+      );
+
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          fromType: 'agent',
+          fromId: req.user!.id,
+          type: 'template',
+          templateName,
+          status: success ? 'sent' : 'failed',
+          waMessageId: messageId || undefined,
+        },
       });
-      if (template) {
-        const bodyParams = Object.keys(templateVariables || {})
-          .sort((a, b) => Number(a) - Number(b))
-          .map((k) => ({ type: 'text' as const, text: (templateVariables || {})[k] }));
-        const components = bodyParams.length > 0
-          ? [{ type: 'body' as const, parameters: bodyParams }]
-          : [];
 
-        const { messageId, success } = await sendTemplateMessage(
-          contact.phone,
-          template.name,
-          template.language,
-          components,
-          req.user!.teamId
-        );
-
-        await prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            fromType: 'agent',
-            fromId: req.user!.id,
-            type: 'template',
-            templateName: template.name,
-            status: success ? 'sent' : 'failed',
-            waMessageId: messageId || undefined,
-          },
-        });
-
-        await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { lastMessageAt: new Date() },
-        });
-      }
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date() },
+      });
     } else if (message) {
       const { messageId, success } = await sendTextMessage(
         contact.phone,
