@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Search,
   Plus,
@@ -14,8 +15,9 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react'
-import { contactsApi } from '@/lib/api'
+import { contactsApi, conversationsApi } from '@/lib/api'
 import { Contact } from '@/types'
+import { useInboxStore } from '@/store/inboxStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -31,6 +33,8 @@ import { toast } from '@/components/ui/use-toast'
 import { ContactModal } from './ContactModal'
 
 export function ContactTable() {
+  const router = useRouter()
+  const { selectConversation } = useInboxStore()
   const [contacts, setContacts] = useState<Contact[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -88,6 +92,32 @@ export function ContactTable() {
       loadContacts()
     } catch {
       toast({ title: 'Failed to delete', variant: 'destructive' })
+    }
+  }
+
+  const handleStartConversation = async (contact: Contact) => {
+    try {
+      const response = await conversationsApi.create({ contactId: contact.id })
+      const convo = response.data.conversation || response.data
+      selectConversation(convo.id)
+      router.push('/inbox')
+    } catch (error: any) {
+      const status = error.response?.status
+      if (status === 409) {
+        const existingId = error.response?.data?.conversationId
+        if (existingId) {
+          selectConversation(existingId)
+          router.push('/inbox')
+        } else {
+          toast({ title: 'A conversation already exists for this contact', variant: 'destructive' })
+        }
+      } else {
+        toast({
+          title: 'Failed to start conversation',
+          description: error.response?.data?.error || 'An error occurred',
+          variant: 'destructive',
+        })
+      }
     }
   }
 
@@ -273,7 +303,7 @@ export function ContactTable() {
                           <Edit className="w-4 h-4 mr-2" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleStartConversation(contact)}>
                           <MessageCircle className="w-4 h-4 mr-2" />
                           Start Conversation
                         </DropdownMenuItem>
