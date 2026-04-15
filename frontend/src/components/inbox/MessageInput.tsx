@@ -30,7 +30,17 @@ import {
 import { cn } from '@/lib/utils'
 import { toast } from '@/components/ui/use-toast'
 import { CannedResponse, Template } from '@/types'
-import { templatesApi, mediaApi } from '@/lib/api'
+import { templatesApi, mediaApi, conversationsApi } from '@/lib/api'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { AlertCircle } from 'lucide-react'
 
 interface MessageInputProps {
   conversationId: string
@@ -88,14 +98,37 @@ interface PendingFile {
   preview?: string
 }
 
+/** Extract {{1}}, {{2}}, … variable indices from a template body */
+function extractVariables(body: string): number[] {
+  const matches = body.match(/\{\{(\d+)\}\}/g) || []
+  const indices = matches.map((m) => parseInt(m.replace(/\{\{|\}\}/g, ''), 10))
+  return Array.from(new Set(indices)).sort((a, b) => a - b)
+}
+
+/** Replace {{1}}, {{2}}, … with provided values */
+function resolveVariables(body: string, values: Record<number, string>): string {
+  return body.replace(/\{\{(\d+)\}\}/g, (_, idx) => values[parseInt(idx, 10)] ?? `{{${idx}}}`)
+}
+
 export function MessageInput({ conversationId }: MessageInputProps) {
+<<<<<<< HEAD
   const { sendMessage, messages } = useInboxStore()
+=======
+  const { sendMessage, loadMessages, messages } = useInboxStore()
+>>>>>>> staging
   const { cannedResponses } = useAppStore()
   const [content, setContent] = useState('')
   const [isNote, setIsNote] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [showCannedResponses, setShowCannedResponses] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+<<<<<<< HEAD
+=======
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
+  const [templateVars, setTemplateVars] = useState<Record<number, string>>({})
+>>>>>>> staging
   const [cannedFilter, setCannedFilter] = useState('')
 
   // Template picker state
@@ -274,11 +307,67 @@ export function MessageInput({ conversationId }: MessageInputProps) {
     textareaRef.current?.focus()
   }
 
+<<<<<<< HEAD
+=======
+  const handleTemplateSelect = (template: Template) => {
+    const vars = extractVariables(template.body)
+    setSelectedTemplate(template)
+    setTemplateVars(Object.fromEntries(vars.map((i) => [i, ''])))
+    setShowTemplates(false)
+  }
+
+  const handleSendTemplate = async () => {
+    if (!selectedTemplate) return
+    setIsSending(true)
+    try {
+      const variableIndices = extractVariables(selectedTemplate.body)
+      const bodyParams = variableIndices.map((i) => ({ type: 'text', text: templateVars[i] ?? '' }))
+      const components = bodyParams.length > 0
+        ? [{ type: 'body', parameters: bodyParams }]
+        : []
+
+      await conversationsApi.sendMessage(conversationId, {
+        type: 'template',
+        templateName: selectedTemplate.name,
+        language: selectedTemplate.language,
+        components,
+      })
+      await loadMessages(conversationId)
+      setSelectedTemplate(null)
+      setTemplateVars({})
+      toast({ title: 'Template sent' })
+    } catch (error: any) {
+      toast({
+        title: 'Failed to send template',
+        description: error.response?.data?.error || error.response?.data?.message || 'An error occurred',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const loadTemplates = async () => {
+    if (templates.length > 0) {
+      setShowTemplates(true)
+      return
+    }
+    try {
+      const response = await templatesApi.list({ status: 'approved' })
+      setTemplates(response.data.templates || response.data || [])
+      setShowTemplates(true)
+    } catch {
+      toast({ title: 'Failed to load templates', variant: 'destructive' })
+    }
+  }
+
+>>>>>>> staging
   const canSend = pendingFile ? !isSending : (!!content.trim() && !isSending)
 
   const templateVariableIndices = selectedTemplate ? extractVariables(selectedTemplate.body) : []
 
   return (
+<<<<<<< HEAD
     <div className={cn('border-t bg-white', isNote && 'bg-yellow-50 border-yellow-200')}>
 
       {/* ── No-outbound-messages notice ── */}
@@ -295,6 +384,22 @@ export function MessageInput({ conversationId }: MessageInputProps) {
           </div>
           <button
             onClick={openTemplatePicker}
+=======
+    <div className={cn(
+      'border-t bg-white',
+      isNote && 'bg-yellow-50 border-yellow-200'
+    )}>
+      {/* No-outbound-messages notice */}
+      {hasNoOutboundMessages && (
+        <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border-b border-amber-200">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-amber-800 font-medium">This customer hasn't messaged you yet.</p>
+            <p className="text-xs text-amber-700 mt-0.5">WhatsApp requires an approved template to initiate a conversation.</p>
+          </div>
+          <button
+            onClick={() => { loadTemplates(); setShowEmojiPicker(false) }}
+>>>>>>> staging
             className="flex-shrink-0 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors"
           >
             Use Template
@@ -302,7 +407,11 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
+<<<<<<< HEAD
       {/* ── Note indicator ── */}
+=======
+      {/* Note indicator */}
+>>>>>>> staging
       {isNote && (
         <div className="flex items-center gap-2 px-4 pt-2 text-xs text-yellow-700">
           <StickyNote className="w-3.5 h-3.5" />
@@ -479,13 +588,18 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
+<<<<<<< HEAD
       {/* ── Template variable fill-in dialog ── */}
+=======
+      {/* Template variable fill-in dialog */}
+>>>>>>> staging
       <Dialog open={!!selectedTemplate} onOpenChange={(open) => { if (!open) { setSelectedTemplate(null); setTemplateVars({}) } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Send Template: {selectedTemplate?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+<<<<<<< HEAD
             {/* Preview */}
             <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
               {selectedTemplate ? resolveVariables(selectedTemplate.body, templateVars) : ''}
@@ -496,6 +610,15 @@ export function MessageInput({ conversationId }: MessageInputProps) {
               <div className="space-y-3">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Fill in variables</p>
                 {templateVariableIndices.map((idx) => (
+=======
+            <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+              {selectedTemplate ? resolveVariables(selectedTemplate.body, templateVars) : ''}
+            </div>
+            {selectedTemplate && extractVariables(selectedTemplate.body).length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Fill in variables</p>
+                {extractVariables(selectedTemplate.body).map((idx) => (
+>>>>>>> staging
                   <div key={idx}>
                     <Label htmlFor={`var-${idx}`} className="text-sm">Variable {`{{${idx}}}`}</Label>
                     <Input
@@ -509,14 +632,22 @@ export function MessageInput({ conversationId }: MessageInputProps) {
                 ))}
               </div>
             ) : (
+<<<<<<< HEAD
               <p className="text-xs text-gray-400">No variables in this template — ready to send as-is.</p>
+=======
+              <p className="text-xs text-gray-400">No variables — ready to send as-is.</p>
+>>>>>>> staging
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setSelectedTemplate(null); setTemplateVars({}) }}>Cancel</Button>
             <Button
               onClick={handleSendTemplate}
+<<<<<<< HEAD
               disabled={isSending || templateVariableIndices.some((i) => !templateVars[i]?.trim())}
+=======
+              disabled={isSending || (!!selectedTemplate && extractVariables(selectedTemplate.body).some((i) => !templateVars[i]?.trim()))}
+>>>>>>> staging
             >
               {isSending ? 'Sending...' : 'Send Template'}
             </Button>

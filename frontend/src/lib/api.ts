@@ -72,7 +72,7 @@ export const conversationsApi = {
     api.post('/conversations', data),
   getMessages: (conversationId: string, params?: { page?: number; limit?: number }) =>
     api.get(`/conversations/${conversationId}/messages`, { params }),
-  sendMessage: (conversationId: string, data: { content?: string; type?: string; mediaUrl?: string; templateId?: string; variables?: Record<string, string>; isNote?: boolean }) =>
+  sendMessage: (conversationId: string, data: { content?: string; type?: string; mediaUrl?: string; isNote?: boolean; templateName?: string; language?: string; components?: Array<{ type: string; parameters?: Array<{ type: string; text: string }> }> }) =>
     api.post(`/conversations/${conversationId}/messages`, data),
   addNote: (conversationId: string, content: string) =>
     api.post(`/conversations/${conversationId}/notes`, { content }),

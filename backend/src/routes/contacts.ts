@@ -334,8 +334,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
       // Delete in dependency order
       await tx.broadcastContact.deleteMany({ where: { contactId: contact.id } });
-      await tx.note.deleteMany({ where: { conversationId: { in: conversationIds } } });
       await tx.conversationLabel.deleteMany({ where: { conversationId: { in: conversationIds } } });
+      await tx.note.deleteMany({ where: { conversationId: { in: conversationIds } } });
       await tx.message.deleteMany({ where: { conversationId: { in: conversationIds } } });
       await tx.conversation.deleteMany({ where: { id: { in: conversationIds } } });
       await tx.contact.delete({ where: { id: contact.id } });

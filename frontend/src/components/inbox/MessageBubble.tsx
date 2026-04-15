@@ -142,12 +142,12 @@ export function MessageBubble({ message, showAgentName }: MessageBubbleProps) {
         {message.type === 'template' && (
           <div className={cn('w-72 rounded-2xl overflow-hidden border', isOutgoing ? 'rounded-br-sm border-primary-300' : 'rounded-bl-sm border-gray-200 bg-white')}>
             <div className={cn('px-4 py-3', isOutgoing ? 'bg-primary-500 text-white' : 'text-gray-800')}>
-              {message.templateName && (
-                <p className={cn('text-xs font-semibold mb-1', isOutgoing ? 'text-white/70' : 'text-gray-400')}>
-                  Template: {message.templateName}
-                </p>
-              )}
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              <p className={cn('text-xs font-semibold mb-1', isOutgoing ? 'text-white/70' : 'text-gray-400')}>
+                Template: {message.templateName}
+              </p>
+              <p className="text-sm whitespace-pre-wrap">
+                {message.content || message.templateName}
+              </p>
               <div className={cn('flex items-center justify-end gap-1 mt-1', isOutgoing ? 'text-white/70' : 'text-gray-400')}>
                 <span className="text-xs">{formatTime(message.createdAt)}</span>
                 {isOutgoing && <StatusIcon status={message.status} />}
