@@ -190,25 +190,6 @@ export function MessageInput({ conversationId }: MessageInputProps) {
     setShowTemplatePicker(false)
   }
 
-  const handleSendTemplate = async () => {
-    if (!selectedTemplate) return
-    setIsSending(true)
-    try {
-      const resolved = resolveVariables(selectedTemplate.body, templateVars)
-      await sendMessage(conversationId, resolved, 'template', false)
-      setSelectedTemplate(null)
-      setTemplateVars({})
-      toast({ title: 'Template sent' })
-    } catch (error: any) {
-      toast({
-        title: 'Failed to send template',
-        description: error.response?.data?.message || 'An error occurred',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsSending(false)
-    }
-  }
 
   // ── File upload ──────────────────────────────────────────────────────────────
 
