@@ -31,16 +31,6 @@ import { cn } from '@/lib/utils'
 import { toast } from '@/components/ui/use-toast'
 import { CannedResponse, Template } from '@/types'
 import { templatesApi, mediaApi, conversationsApi } from '@/lib/api'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import { AlertCircle } from 'lucide-react'
 
 interface MessageInputProps {
   conversationId: string
@@ -81,14 +71,12 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-/** Extract {{1}}, {{2}}, … variable indices from a template body */
 function extractVariables(body: string): number[] {
   const matches = body.match(/\{\{(\d+)\}\}/g) || []
   const indices = matches.map((m) => parseInt(m.replace(/\{\{|\}\}/g, ''), 10))
-  return [...new Set(indices)].sort((a, b) => a - b)
+  return Array.from(new Set(indices)).sort((a, b) => a - b)
 }
 
-/** Replace {{1}}, {{2}}, … with provided values */
 function resolveVariables(body: string, values: Record<number, string>): string {
   return body.replace(/\{\{(\d+)\}\}/g, (_, idx) => values[parseInt(idx, 10)] ?? `{{${idx}}}`)
 }
@@ -98,18 +86,6 @@ interface PendingFile {
   preview?: string
 }
 
-/** Extract {{1}}, {{2}}, … variable indices from a template body */
-function extractVariables(body: string): number[] {
-  const matches = body.match(/\{\{(\d+)\}\}/g) || []
-  const indices = matches.map((m) => parseInt(m.replace(/\{\{|\}\}/g, ''), 10))
-  return Array.from(new Set(indices)).sort((a, b) => a - b)
-}
-
-/** Replace {{1}}, {{2}}, … with provided values */
-function resolveVariables(body: string, values: Record<number, string>): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, idx) => values[parseInt(idx, 10)] ?? `{{${idx}}}`)
-}
-
 export function MessageInput({ conversationId }: MessageInputProps) {
   const { sendMessage, loadMessages, messages } = useInboxStore()
   const { cannedResponses } = useAppStore()
@@ -117,21 +93,13 @@ export function MessageInput({ conversationId }: MessageInputProps) {
   const [isNote, setIsNote] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [showCannedResponses, setShowCannedResponses] = useState(false)
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-  const [showTemplates, setShowTemplates] = useState(false)
-  const [templates, setTemplates] = useState<Template[]>([])
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
-  const [templateVars, setTemplateVars] = useState<Record<number, string>>({})
   const [cannedFilter, setCannedFilter] = useState('')
-
-  // Template picker state
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
   const [templateVars, setTemplateVars] = useState<Record<number, string>>({})
-
-  // File upload state
   const [pendingFile, setPendingFile] = useState<PendingFile | null>(null)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
 
@@ -142,7 +110,6 @@ export function MessageInput({ conversationId }: MessageInputProps) {
   const hasNoOutboundMessages = conversationMessages.length === 0 ||
     conversationMessages.every((m) => m.fromType === 'contact')
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
@@ -150,7 +117,6 @@ export function MessageInput({ conversationId }: MessageInputProps) {
     }
   }, [content])
 
-  // Canned response trigger
   useEffect(() => {
     if (content.startsWith('/')) {
       setShowCannedResponses(true)
@@ -190,6 +156,36 @@ export function MessageInput({ conversationId }: MessageInputProps) {
     setShowTemplatePicker(false)
   }
 
+  const handleSendTemplate = async () => {
+    if (!selectedTemplate) return
+    setIsSending(true)
+    try {
+      const variableIndices = extractVariables(selectedTemplate.body)
+      const bodyParams = variableIndices.map((i) => ({ type: 'text', text: templateVars[i] ?? '' }))
+      const components = bodyParams.length > 0
+        ? [{ type: 'body', parameters: bodyParams }]
+        : []
+
+      await conversationsApi.sendMessage(conversationId, {
+        type: 'template',
+        templateName: selectedTemplate.name,
+        language: selectedTemplate.language,
+        components,
+      })
+      await loadMessages(conversationId)
+      setSelectedTemplate(null)
+      setTemplateVars({})
+      toast({ title: 'Template sent' })
+    } catch (error: any) {
+      toast({
+        title: 'Failed to send template',
+        description: error.response?.data?.error || error.response?.data?.message || 'An error occurred',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSending(false)
+    }
+  }
 
   // ── File upload ──────────────────────────────────────────────────────────────
 
@@ -281,67 +277,11 @@ export function MessageInput({ conversationId }: MessageInputProps) {
     textareaRef.current?.focus()
   }
 
-  const handleTemplateSelect = (template: Template) => {
-    const vars = extractVariables(template.body)
-    setSelectedTemplate(template)
-    setTemplateVars(Object.fromEntries(vars.map((i) => [i, ''])))
-    setShowTemplates(false)
-  }
-
-  const handleSendTemplate = async () => {
-    if (!selectedTemplate) return
-    setIsSending(true)
-    try {
-      const variableIndices = extractVariables(selectedTemplate.body)
-      const bodyParams = variableIndices.map((i) => ({ type: 'text', text: templateVars[i] ?? '' }))
-      const components = bodyParams.length > 0
-        ? [{ type: 'body', parameters: bodyParams }]
-        : []
-
-      await conversationsApi.sendMessage(conversationId, {
-        type: 'template',
-        templateName: selectedTemplate.name,
-        language: selectedTemplate.language,
-        components,
-      })
-      await loadMessages(conversationId)
-      setSelectedTemplate(null)
-      setTemplateVars({})
-      toast({ title: 'Template sent' })
-    } catch (error: any) {
-      toast({
-        title: 'Failed to send template',
-        description: error.response?.data?.error || error.response?.data?.message || 'An error occurred',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsSending(false)
-    }
-  }
-
-  const loadTemplates = async () => {
-    if (templates.length > 0) {
-      setShowTemplates(true)
-      return
-    }
-    try {
-      const response = await templatesApi.list({ status: 'approved' })
-      setTemplates(response.data.templates || response.data || [])
-      setShowTemplates(true)
-    } catch {
-      toast({ title: 'Failed to load templates', variant: 'destructive' })
-    }
-  }
-
   const canSend = pendingFile ? !isSending : (!!content.trim() && !isSending)
 
-  const templateVariableIndices = selectedTemplate ? extractVariables(selectedTemplate.body) : []
-
   return (
-    <div className={cn(
-      'border-t bg-white',
-      isNote && 'bg-yellow-50 border-yellow-200'
-    )}>
+    <div className={cn('border-t bg-white', isNote && 'bg-yellow-50 border-yellow-200')}>
+
       {/* No-outbound-messages notice */}
       {hasNoOutboundMessages && (
         <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border-b border-amber-200">
@@ -351,7 +291,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
             <p className="text-xs text-amber-700 mt-0.5">WhatsApp requires an approved template to initiate a conversation.</p>
           </div>
           <button
-            onClick={() => { loadTemplates(); setShowEmojiPicker(false) }}
+            onClick={() => { openTemplatePicker(); setShowEmojiPicker(false) }}
             className="flex-shrink-0 text-xs font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors"
           >
             Use Template
@@ -367,7 +307,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
-      {/* ── Canned responses popup ── */}
+      {/* Canned responses popup */}
       {showCannedResponses && filteredCanned.length > 0 && (
         <div className="border-t border-gray-100 max-h-48 overflow-y-auto">
           <div className="px-3 py-1.5 text-xs font-medium text-gray-400 bg-gray-50">Canned Responses</div>
@@ -386,7 +326,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
-      {/* ── Emoji picker ── */}
+      {/* Emoji picker */}
       {showEmojiPicker && (
         <div className="border-t border-gray-100 p-3">
           <div className="flex flex-wrap gap-2">
@@ -399,7 +339,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
-      {/* ── Template picker panel ── */}
+      {/* Template picker panel */}
       {showTemplatePicker && (
         <div className="border-t border-gray-100 max-h-64 overflow-y-auto">
           <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b sticky top-0">
@@ -431,7 +371,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
-      {/* ── Pending file preview ── */}
+      {/* Pending file preview */}
       {pendingFile && (
         <div className="border-t border-gray-100 px-4 py-2">
           <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
@@ -460,10 +400,10 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         </div>
       )}
 
-      {/* ── Hidden file input ── */}
+      {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept={ACCEPT_TYPES} className="hidden" onChange={handleFileSelect} />
 
-      {/* ── Main input row ── */}
+      {/* Main input row */}
       <div className="flex items-end gap-2 px-4 py-3">
         <div className="flex items-center gap-1 mb-1">
           <button
