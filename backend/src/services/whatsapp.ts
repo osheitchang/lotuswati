@@ -180,6 +180,24 @@ export async function sendTemplateMessage(
     const phoneNumberId = process.env.WA_PHONE_NUMBER_ID;
     const accessToken = process.env.WA_ACCESS_TOKEN;
 
+    // Strip components with empty parameters arrays — Meta rejects them
+    const validComponents = components.filter(
+      (c) => !c.parameters || c.parameters.length > 0
+    );
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: language },
+        ...(validComponents.length > 0 ? { components: validComponents } : {}),
+      },
+    };
+
+    console.log('[WhatsApp API] Sending template payload:', JSON.stringify(payload, null, 2));
+
     const response = await fetch(
       `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
       {
@@ -188,16 +206,7 @@ export async function sendTemplateMessage(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to,
-          type: 'template',
-          template: {
-            name: templateName,
-            language: { code: language },
-            components,
-          },
-        }),
+        body: JSON.stringify(payload),
       }
     );
 
