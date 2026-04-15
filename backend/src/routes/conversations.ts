@@ -9,6 +9,17 @@ import { getIO } from '../lib/socket';
 const router = Router();
 router.use(authenticate);
 
+/** Substitute {{1}}, {{2}}, … in a template body using ordered body parameters */
+function renderTemplateBody(body: string, components: Array<{ type: string; parameters?: Array<{ type: string; text: string }> }>): string {
+  const bodyComp = components.find((c) => c.type === 'body');
+  if (!bodyComp?.parameters?.length) return body;
+  let rendered = body;
+  bodyComp.parameters.forEach((param, idx) => {
+    rendered = rendered.replace(new RegExp(`\\{\\{${idx + 1}\\}\\}`, 'g'), param.text ?? '');
+  });
+  return rendered;
+}
+
 // GET /api/conversations
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -190,6 +201,14 @@ router.post('/', async (req: Request, res: Response) => {
         ? [{ type: 'body' as const, parameters: bodyParams }]
         : [];
 
+      // Look up template body to render the content for display
+      const templateRecord = await prisma.template.findFirst({
+        where: { name: templateName, teamId },
+      });
+      const renderedContent = templateRecord
+        ? renderTemplateBody(templateRecord.body, components)
+        : undefined;
+
       const { messageId, success } = await sendTemplateMessage(
         contact.phone,
         templateName,
@@ -205,6 +224,7 @@ router.post('/', async (req: Request, res: Response) => {
           fromId: req.user!.id,
           type: 'template',
           templateName,
+          content: renderedContent,
           status: success ? 'sent' : 'failed',
           waMessageId: messageId || undefined,
         },
@@ -511,6 +531,16 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
       messageData.content = data.content;
     } else if (data.type === 'template') {
       messageData.templateName = data.templateName;
+      // Look up template body and render content for display
+      const templateRecord = await prisma.template.findFirst({
+        where: { name: data.templateName, teamId: req.user!.teamId },
+      });
+      if (templateRecord) {
+        messageData.content = renderTemplateBody(
+          templateRecord.body,
+          (data.components ?? []) as Array<{ type: string; parameters?: Array<{ type: string; text: string }> }>
+        );
+      }
     } else {
       messageData.mediaUrl = data.mediaUrl;
       messageData.mediaName = data.mediaName;
