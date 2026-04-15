@@ -80,7 +80,7 @@ interface PendingFile {
 function extractVariables(body: string): number[] {
   const matches = body.match(/\{\{(\d+)\}\}/g) || []
   const indices = matches.map((m) => parseInt(m.replace(/\{\{|\}\}/g, ''), 10))
-  return [...new Set(indices)].sort((a, b) => a - b)
+  return Array.from(new Set(indices)).sort((a, b) => a - b)
 }
 
 /** Replace {{1}}, {{2}}, … with provided values */
