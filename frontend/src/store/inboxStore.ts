@@ -112,28 +112,14 @@ export const useInboxStore = create<InboxState>((set, get) => ({
 
   sendMessage: async (conversationId, content, type = 'text', isNote = false, mediaUrl?: string) => {
     try {
-      const response = await conversationsApi.sendMessage(conversationId, {
+      await conversationsApi.sendMessage(conversationId, {
         content,
         type,
         isNote,
         mediaUrl,
       })
-      const message = response.data.message || response.data
-      set((state) => ({
-        messages: {
-          ...state.messages,
-          [conversationId]: [...(state.messages[conversationId] || []), message],
-        },
-        conversations: state.conversations.map((c) =>
-          c.id === conversationId
-            ? { ...c, lastMessage: message, lastMessageAt: message.createdAt }
-            : c
-        ).sort((a, b) => {
-          const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0
-          const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0
-          return bTime - aTime
-        }),
-      }))
+      // Don't add optimistically — the socket `message:new` event will deliver it,
+      // preventing the message from appearing twice in the chat.
     } catch (error) {
       throw error
     }

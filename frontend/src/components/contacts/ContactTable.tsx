@@ -18,6 +18,7 @@ import {
 import { contactsApi, conversationsApi } from '@/lib/api'
 import { Contact } from '@/types'
 import { useInboxStore } from '@/store/inboxStore'
+import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -35,6 +36,8 @@ import { ContactModal } from './ContactModal'
 export function ContactTable() {
   const router = useRouter()
   const { selectConversation } = useInboxStore()
+  const { user } = useAuthStore()
+  const isAdmin = user?.role === 'admin'
   const [contacts, setContacts] = useState<Contact[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -185,15 +188,17 @@ export function ContactTable() {
         {selectedIds.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">{selectedIds.length} selected</span>
-            <Button
-              size="sm"
-              variant="destructive"
-              className="h-8 gap-1"
-              onClick={handleBulkDelete}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Delete
-            </Button>
+            {isAdmin && (
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-8 gap-1"
+                onClick={handleBulkDelete}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -312,10 +317,12 @@ export function ContactTable() {
                           <Ban className="w-4 h-4 mr-2" />
                           {contact.blocked ? 'Unblock' : 'Block'}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDelete(contact.id)} className="text-red-600">
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
+                        {isAdmin && (
+                          <DropdownMenuItem onClick={() => handleDelete(contact.id)} className="text-red-600">
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
