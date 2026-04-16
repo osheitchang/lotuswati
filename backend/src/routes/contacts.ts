@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../lib/prisma';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireRole } from '../middleware/auth';
 
 const router = Router();
 
@@ -314,7 +314,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/contacts/:id
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const contact = await prisma.contact.findFirst({
       where: { id: req.params.id, teamId: req.user!.teamId },

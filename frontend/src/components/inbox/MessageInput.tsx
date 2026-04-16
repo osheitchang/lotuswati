@@ -359,12 +359,11 @@ export function MessageInput({ conversationId }: MessageInputProps) {
                 className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 transition-colors"
                 onClick={() => handlePickTemplate(t)}
               >
-                <div className="flex items-center gap-2 mb-0.5">
+                <div className="flex items-center gap-2">
                   <p className="text-sm font-medium text-gray-800">{t.name}</p>
-                  <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{t.category}</span>
-                  <span className="text-xs text-gray-400">{t.language}</span>
+                  <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{t.language}</span>
                 </div>
-                <p className="text-xs text-gray-500 line-clamp-2">{t.body}</p>
+                <p className="text-xs text-gray-500 truncate mt-0.5">{t.body}</p>
               </button>
             ))
           )}
@@ -480,7 +479,7 @@ export function MessageInput({ conversationId }: MessageInputProps) {
       <Dialog open={!!selectedTemplate} onOpenChange={(open) => { if (!open) { setSelectedTemplate(null); setTemplateVars({}) } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Send Template: {selectedTemplate?.name}</DialogTitle>
+            <DialogTitle>Send Template: {selectedTemplate?.name}{selectedTemplate?.language ? ` (${selectedTemplate.language})` : ''}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
