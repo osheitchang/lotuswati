@@ -90,6 +90,8 @@ export const conversationsApi = {
     api.post(`/conversations/${conversationId}/reopen`),
   markRead: (conversationId: string) =>
     api.post(`/conversations/${conversationId}/read`),
+  delete: (conversationId: string) =>
+    api.delete(`/conversations/${conversationId}`),
 }
 
 // Templates API

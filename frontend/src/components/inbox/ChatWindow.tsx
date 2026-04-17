@@ -9,8 +9,10 @@ import {
   Phone,
   RefreshCw,
   MessageSquare,
+  Trash2,
 } from 'lucide-react'
 import { useInboxStore } from '@/store/inboxStore'
+import { useAuthStore } from '@/store/authStore'
 import { useAppStore } from '@/store/appStore'
 import { MessageBubble } from './MessageBubble'
 import { MessageInput } from './MessageInput'
@@ -43,10 +45,13 @@ export function ChatWindow({ onToggleDetail, showDetail }: ChatWindowProps) {
     resolveConversation,
     reopenConversation,
     assignConversation,
+    deleteConversation,
   } = useInboxStore()
+  const { user } = useAuthStore()
   const { agents } = useAppStore()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [showScrollBottom, setShowScrollBottom] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
     if (selectedConversationId) {
@@ -102,6 +107,17 @@ export function ChatWindow({ onToggleDetail, showDetail }: ChatWindowProps) {
     }
   }
 
+  const handleDelete = async () => {
+    if (!selectedConversationId) return
+    try {
+      await deleteConversation(selectedConversationId)
+      setShowDeleteConfirm(false)
+      toast({ title: 'Conversation deleted' })
+    } catch {
+      toast({ title: 'Failed to delete conversation', variant: 'destructive' })
+    }
+  }
+
   if (!selectedConversation) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-50">
@@ -138,7 +154,7 @@ export function ChatWindow({ onToggleDetail, showDetail }: ChatWindowProps) {
   })
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full">
+    <div className="flex-1 flex flex-col min-w-0 h-full relative">
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3 bg-white border-b border-gray-100 flex-shrink-0">
         <Avatar className="w-9 h-9">
@@ -201,14 +217,30 @@ export function ChatWindow({ onToggleDetail, showDetail }: ChatWindowProps) {
           )}
 
           {/* More options */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onToggleDetail}
-          >
-            <MoreVertical className="w-4 h-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={onToggleDetail}>
+                Contact details
+              </DropdownMenuItem>
+              {user?.role === 'admin' && status === 'resolved' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-red-600 focus:text-red-600"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-2" />
+                    Delete conversation
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -269,6 +301,26 @@ export function ChatWindow({ onToggleDetail, showDetail }: ChatWindowProps) {
 
       {/* Message Input */}
       <MessageInput conversationId={selectedConversationId!} />
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 mx-4 max-w-sm w-full">
+            <h3 className="font-semibold text-gray-900 mb-2">Delete conversation?</h3>
+            <p className="text-sm text-gray-500 mb-5">
+              This will permanently delete all messages, notes, and labels. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" size="sm" onClick={handleDelete}>
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

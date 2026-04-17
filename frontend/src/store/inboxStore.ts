@@ -36,6 +36,7 @@ interface InboxState {
   updateMessageStatus: (messageId: string, status: string) => void
   addLabel: (conversationId: string, labelId: string) => Promise<void>
   removeLabel: (conversationId: string, labelId: string) => Promise<void>
+  deleteConversation: (id: string) => Promise<void>
 }
 
 export const useInboxStore = create<InboxState>((set, get) => ({
@@ -317,5 +318,18 @@ export const useInboxStore = create<InboxState>((set, get) => ({
     } catch (error) {
       throw error
     }
+  },
+
+  deleteConversation: async (id) => {
+    await conversationsApi.delete(id)
+    set((state) => {
+      const remaining = state.conversations.filter((c) => c.id !== id)
+      const wasSelected = state.selectedConversationId === id
+      return {
+        conversations: remaining,
+        selectedConversationId: wasSelected ? (remaining[0]?.id ?? null) : state.selectedConversationId,
+        selectedConversation: wasSelected ? (remaining[0] ?? null) : state.selectedConversation,
+      }
+    })
   },
 }))

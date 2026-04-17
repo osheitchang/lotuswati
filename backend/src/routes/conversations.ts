@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../lib/prisma';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireRole } from '../middleware/auth';
 import { sendTextMessage, sendTemplateMessage, sendMediaMessage } from '../services/whatsapp';
 import { processAutomations } from '../services/automation';
 import { getIO } from '../lib/socket';
@@ -177,9 +177,9 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(200).json({ conversation: existingOpen });
     }
 
-    // Reopen resolved/pending conversation instead of creating a duplicate
+    // Reopen resolved/pending/snoozed conversation instead of creating a duplicate
     const existingClosed = await prisma.conversation.findFirst({
-      where: { contactId: contact.id, teamId, status: { in: ['resolved', 'pending'] } },
+      where: { contactId: contact.id, teamId, status: { in: ['resolved', 'pending', 'snoozed'] } },
       orderBy: { lastMessageAt: 'desc' },
     });
 
@@ -383,8 +383,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/conversations/:id
-router.delete('/:id', async (req: Request, res: Response) => {
+// DELETE /api/conversations/:id — admin only, resolved conversations only
+router.delete('/:id', requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const conversation = await prisma.conversation.findFirst({
       where: { id: req.params.id, teamId: req.user!.teamId },
@@ -394,7 +394,16 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
-    await prisma.conversation.delete({ where: { id: req.params.id } });
+    if (conversation.status !== 'resolved') {
+      return res.status(400).json({ error: 'Only resolved conversations can be deleted' });
+    }
+
+    await prisma.$transaction([
+      prisma.conversationLabel.deleteMany({ where: { conversationId: req.params.id } }),
+      prisma.note.deleteMany({ where: { conversationId: req.params.id } }),
+      prisma.message.deleteMany({ where: { conversationId: req.params.id } }),
+      prisma.conversation.delete({ where: { id: req.params.id } }),
+    ]);
 
     try {
       const io = getIO();
