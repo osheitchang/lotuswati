@@ -212,14 +212,15 @@ async function processMessage(
     return;
   }
 
-  // Find or create open conversation
+  // Find any existing conversation for this contact — never create a duplicate
   let conversation = await prisma.conversation.findFirst({
-    where: { contactId: contact.id, teamId, status: 'open' },
+    where: { contactId: contact.id, teamId, status: { in: ['open', 'pending', 'snoozed'] } },
+    orderBy: { lastMessageAt: 'desc' },
   });
 
   let isNewConversation = false;
   if (!conversation) {
-    // Reopen resolved conversation or create new one
+    // Reopen the most recent resolved conversation, or create new
     const resolved = await prisma.conversation.findFirst({
       where: { contactId: contact.id, teamId, status: 'resolved' },
       orderBy: { createdAt: 'desc' },
@@ -242,10 +243,11 @@ async function processMessage(
       isNewConversation = true;
     }
   } else {
-    // Update unread count
+    // Update status to open and increment unread count
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
+        status: 'open',
         lastMessageAt: new Date(),
         unreadCount: { increment: 1 },
       },
