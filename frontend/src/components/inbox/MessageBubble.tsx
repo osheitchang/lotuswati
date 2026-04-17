@@ -123,6 +123,46 @@ export function MessageBubble({ message, showAgentName }: MessageBubbleProps) {
           </div>
         )}
 
+        {message.type === 'video' && (
+          <div className={cn('rounded-2xl overflow-hidden', isOutgoing ? 'rounded-br-sm' : 'rounded-bl-sm')}>
+            {message.mediaUrl ? (
+              <div>
+                <video
+                  controls
+                  style={{ maxWidth: '300px' }}
+                  className="block"
+                  onError={(e) => { (e.currentTarget as HTMLVideoElement).style.display = 'none'; (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'block' }}
+                >
+                  <source src={message.mediaUrl} type="video/mp4" />
+                  <source src={message.mediaUrl} type="video/3gpp" />
+                  <source src={message.mediaUrl} type="video/webm" />
+                </video>
+                <a
+                  href={message.mediaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn('hidden px-3 py-2 text-sm underline', isOutgoing ? 'text-white' : 'text-primary-600')}
+                >
+                  Download video
+                </a>
+                {message.caption && (
+                  <div className={cn('px-3 py-2 text-sm', isOutgoing ? 'bg-primary-500 text-white' : 'bg-white text-gray-700')}>
+                    {message.caption}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="w-48 h-32 bg-gray-200 flex items-center justify-center">
+                <span className="text-gray-400 text-sm">Video unavailable</span>
+              </div>
+            )}
+            <div className={cn('px-3 py-1 flex items-center justify-end gap-1', isOutgoing ? 'bg-primary-500 text-white/70' : 'bg-white text-gray-400')}>
+              <span className="text-xs">{formatTime(message.createdAt)}</span>
+              {isOutgoing && <StatusIcon status={message.status} />}
+            </div>
+          </div>
+        )}
+
         {message.type === 'audio' && (
           <div className={cn('px-4 py-3', isOutgoing ? 'message-bubble-outgoing' : 'message-bubble-incoming')}>
             {message.mediaUrl ? (

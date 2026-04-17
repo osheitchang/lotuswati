@@ -193,8 +193,19 @@ export const useInboxStore = create<InboxState>((set, get) => ({
     const { selectedConversationId } = get()
     set((state) => {
       const existingMessages = state.messages[message.conversationId] || []
-      // Avoid duplicates
-      if (existingMessages.some((m) => m.id === message.id)) return state
+      const msgTime = new Date(message.createdAt).getTime()
+      const isDuplicate = existingMessages.some((m) => {
+        if (m.id === message.id) return true
+        if ((m as any).waMessageId && (message as any).waMessageId && (m as any).waMessageId === (message as any).waMessageId) return true
+        if (
+          m.content === message.content &&
+          m.fromId === message.fromId &&
+          m.fromType === message.fromType &&
+          Math.abs(new Date(m.createdAt).getTime() - msgTime) < 10000
+        ) return true
+        return false
+      })
+      if (isDuplicate) return state
 
       const updatedMessages = [...existingMessages, message]
       const updatedConversations = state.conversations.map((c) => {

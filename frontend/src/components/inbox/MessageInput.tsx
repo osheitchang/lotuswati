@@ -265,7 +265,6 @@ export function MessageInput({ conversationId }: MessageInputProps) {
         language: selectedTemplate.language,
         components,
       })
-      await loadMessages(conversationId)
       setSelectedTemplate(null)
       setTemplateVars({})
       toast({ title: 'Template sent' })
