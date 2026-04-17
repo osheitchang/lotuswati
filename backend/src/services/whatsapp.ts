@@ -212,11 +212,12 @@ export async function sendTemplateMessage(
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('[WhatsApp API] Send template error:', errorData);
+      console.error(`[WhatsApp API] Send template error (HTTP ${response.status}):`, JSON.stringify(errorData));
       return { messageId: '', success: false };
     }
 
     const data = await response.json() as { messages: Array<{ id: string }> };
+    console.log(`[WhatsApp API] Template sent (HTTP ${response.status}), message ID: ${data.messages[0]?.id}`);
     return { messageId: data.messages[0]?.id || mockMessageId, success: true };
   } catch (err) {
     console.error('[WhatsApp API] Send template exception:', err);
