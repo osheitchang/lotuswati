@@ -165,32 +165,52 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Cannot start conversation with blocked contact' });
     }
 
-    // Check for existing open conversation
-    const existing = await prisma.conversation.findFirst({
+    // Return existing open conversation instead of creating a duplicate
+    const existingOpen = await prisma.conversation.findFirst({
       where: { contactId: contact.id, teamId, status: 'open' },
-    });
-
-    if (existing) {
-      return res.status(409).json({
-        error: 'An open conversation already exists for this contact',
-        conversationId: existing.id,
-      });
-    }
-
-    const conversation = await prisma.conversation.create({
-      data: {
-        teamId,
-        contactId: contact.id,
-        assignedToId: assignedToId || null,
-        lastMessageAt: new Date(),
-      },
       include: {
         contact: true,
-        assignedTo: {
-          select: { id: true, name: true, email: true, avatar: true },
-        },
+        assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
       },
     });
+    if (existingOpen) {
+      return res.status(200).json({ conversation: existingOpen });
+    }
+
+    // Reopen resolved/pending conversation instead of creating a duplicate
+    const existingClosed = await prisma.conversation.findFirst({
+      where: { contactId: contact.id, teamId, status: { in: ['resolved', 'pending'] } },
+      orderBy: { lastMessageAt: 'desc' },
+    });
+
+    let conversation;
+    if (existingClosed) {
+      conversation = await prisma.conversation.update({
+        where: { id: existingClosed.id },
+        data: {
+          status: 'open',
+          lastMessageAt: new Date(),
+          ...(assignedToId !== undefined ? { assignedToId } : {}),
+        },
+        include: {
+          contact: true,
+          assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+        },
+      });
+    } else {
+      conversation = await prisma.conversation.create({
+        data: {
+          teamId,
+          contactId: contact.id,
+          assignedToId: assignedToId || null,
+          lastMessageAt: new Date(),
+        },
+        include: {
+          contact: true,
+          assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+        },
+      });
+    }
 
     // Send initial message if provided
     if (templateName) {

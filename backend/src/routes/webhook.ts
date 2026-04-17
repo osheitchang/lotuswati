@@ -101,6 +101,10 @@ async function handleStatusUpdate(
       return;
     }
 
+    if (status === 'failed') {
+      console.error(`[Webhook] Message ${waMessageId} failed. Error:`, JSON.stringify(errors));
+    }
+
     const newStatus =
       status === 'failed' ? 'failed' : status === 'read' ? 'read' : status;
 
