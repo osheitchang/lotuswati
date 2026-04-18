@@ -91,8 +91,16 @@ export function TemplateModal({ open, onClose, template, onSaved }: TemplateModa
         await templatesApi.update(template.id, payload)
         toast({ title: 'Template updated' })
       } else {
-        await templatesApi.create(payload)
-        toast({ title: 'Template created' })
+        const response = await templatesApi.create(payload)
+        const submittedToMeta = response.data?.submittedToMeta
+        toast({
+          title: submittedToMeta
+            ? 'Template submitted to WhatsApp for approval'
+            : 'Template saved (pending)',
+          description: submittedToMeta
+            ? 'Approval usually takes minutes to a few hours. You can use templates once approved.'
+            : undefined,
+        })
       }
       onSaved()
       onClose()
@@ -329,11 +337,18 @@ export function TemplateModal({ open, onClose, template, onSaved }: TemplateModa
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? 'Saving...' : template ? 'Update' : 'Create'}
-          </Button>
+        <DialogFooter className="flex-col items-start gap-2 sm:flex-row sm:items-center">
+          {!template && (
+            <p className="text-xs text-gray-400 flex-1">
+              Templates require Meta&apos;s approval before use — approval typically takes minutes to a few hours.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? 'Saving...' : template ? 'Update' : 'Submit for approval'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

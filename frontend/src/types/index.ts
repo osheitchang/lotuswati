@@ -90,6 +90,7 @@ export interface Template {
   body: string
   footer?: string
   buttons: TemplateButton[]
+  waTemplateId?: string | null
   teamId: string
   createdAt: string
 }

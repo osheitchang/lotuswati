@@ -56,11 +56,20 @@ export function TemplateList() {
 
   const handleSubmit = async (id: string) => {
     try {
-      await templatesApi.submit(id)
-      toast({ title: 'Template submitted for review' })
+      const response = await templatesApi.submit(id)
+      const submittedToMeta = response.data?.submittedToMeta
+      toast({
+        title: submittedToMeta
+          ? 'Template submitted to WhatsApp for approval'
+          : 'Template submitted (no WA credentials configured)',
+      })
       loadTemplates()
-    } catch {
-      toast({ title: 'Failed to submit', variant: 'destructive' })
+    } catch (error: any) {
+      toast({
+        title: 'Failed to submit',
+        description: error.response?.data?.error,
+        variant: 'destructive',
+      })
     }
   }
 
@@ -191,7 +200,7 @@ export function TemplateList() {
                   </div>
                 )}
 
-                {template.status === 'draft' && (
+                {(template.status === 'draft' || (template.status === 'pending' && !template.waTemplateId)) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -199,7 +208,7 @@ export function TemplateList() {
                     onClick={() => handleSubmit(template.id)}
                   >
                     <Send className="w-3 h-3" />
-                    Submit for Review
+                    Submit to WhatsApp
                   </Button>
                 )}
               </div>
