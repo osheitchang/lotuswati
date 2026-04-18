@@ -325,10 +325,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-<<<<<<< Updated upstream
-// POST /api/templates/:id/submit
-// Submit template to WhatsApp for approval (mock: instantly approves)
-=======
 // POST /api/templates/sync — pull templates from Meta and upsert locally
 router.post('/sync', async (req: Request, res: Response) => {
   try {
@@ -417,7 +413,7 @@ router.post('/sync', async (req: Request, res: Response) => {
             headerValue,
             footer,
             buttons: JSON.stringify(buttons),
-            waTemplateId: t.id, // save real Meta template ID
+            waTemplateId: t.id,
           },
         });
       } else {
@@ -449,7 +445,6 @@ router.post('/sync', async (req: Request, res: Response) => {
 });
 
 // POST /api/templates/:id/submit — submit a locally-created template to Meta
->>>>>>> Stashed changes
 router.post('/:id/submit', async (req: Request, res: Response) => {
   try {
     const template = await prisma.template.findFirst({
