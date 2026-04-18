@@ -325,11 +325,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-<<<<<<< HEAD
-// POST /api/templates/sync — pull approved templates from Meta and upsert locally
-=======
 // POST /api/templates/sync — pull templates from Meta and upsert locally
->>>>>>> staging
 router.post('/sync', async (req: Request, res: Response) => {
   try {
     const accessToken = process.env.WA_ACCESS_TOKEN;
@@ -341,22 +337,14 @@ router.post('/sync', async (req: Request, res: Response) => {
       });
     }
 
-<<<<<<< HEAD
-    const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?limit=100&fields=name,status,category,language,components`;
-=======
     const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?limit=100&fields=id,name,status,category,language,components`;
->>>>>>> staging
     const metaRes = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!metaRes.ok) {
       const errBody = await metaRes.json().catch(() => ({}));
-<<<<<<< HEAD
-      console.error('[Templates] Meta API error:', errBody);
-=======
       console.error('[Templates] Meta API error during sync:', errBody);
->>>>>>> staging
       return res.status(502).json({ error: 'Meta API request failed', details: errBody });
     }
 
@@ -367,10 +355,7 @@ router.post('/sync', async (req: Request, res: Response) => {
       buttons?: Array<{ type: string; text: string; url?: string; phone_number?: string }>;
     };
     type MetaTemplate = {
-<<<<<<< HEAD
-=======
       id: string;
->>>>>>> staging
       name: string;
       status: string;
       category: string;
@@ -386,11 +371,7 @@ router.post('/sync', async (req: Request, res: Response) => {
 
     for (const t of metaTemplates) {
       const bodyComp = t.components.find((c) => c.type === 'BODY');
-<<<<<<< HEAD
-      if (!bodyComp?.text) continue; // skip templates with no body
-=======
       if (!bodyComp?.text) continue;
->>>>>>> staging
 
       const headerComp = t.components.find((c) => c.type === 'HEADER');
       const footerComp = t.components.find((c) => c.type === 'FOOTER');
@@ -406,36 +387,19 @@ router.post('/sync', async (req: Request, res: Response) => {
         ...(b.phone_number ? { phone_number: b.phone_number } : {}),
       }));
 
-<<<<<<< HEAD
-      const statusMap: Record<string, string> = {
-=======
       const STATUS_MAP: Record<string, string> = {
->>>>>>> staging
         APPROVED: 'approved',
         REJECTED: 'rejected',
         PENDING: 'pending',
         PAUSED: 'pending',
         DISABLED: 'rejected',
       };
-<<<<<<< HEAD
-      const status = statusMap[t.status.toUpperCase()] ?? 'pending';
-
-      const validCategories = ['MARKETING', 'UTILITY', 'AUTHENTICATION'];
-      const category = validCategories.includes(t.category.toUpperCase())
-        ? t.category.toUpperCase()
-        : 'UTILITY';
-
-      const existing = await prisma.template.findFirst({
-        where: { name: t.name, teamId },
-      });
-=======
       const status = STATUS_MAP[t.status.toUpperCase()] ?? 'pending';
 
       const validCategories = ['MARKETING', 'UTILITY', 'AUTHENTICATION'];
       const category = validCategories.includes(t.category.toUpperCase()) ? t.category.toUpperCase() : 'UTILITY';
 
       const existing = await prisma.template.findFirst({ where: { name: t.name, teamId } });
->>>>>>> staging
 
       if (existing) {
         await prisma.template.update({
@@ -449,10 +413,7 @@ router.post('/sync', async (req: Request, res: Response) => {
             headerValue,
             footer,
             buttons: JSON.stringify(buttons),
-<<<<<<< HEAD
-=======
             waTemplateId: t.id,
->>>>>>> staging
           },
         });
       } else {
@@ -467,11 +428,7 @@ router.post('/sync', async (req: Request, res: Response) => {
             footer,
             buttons: JSON.stringify(buttons),
             status,
-<<<<<<< HEAD
-            waTemplateId: t.name,
-=======
             waTemplateId: t.id,
->>>>>>> staging
             teamId,
           },
         });
@@ -487,12 +444,7 @@ router.post('/sync', async (req: Request, res: Response) => {
   }
 });
 
-<<<<<<< HEAD
-// POST /api/templates/:id/submit
-// Submit template to WhatsApp for approval (mock: instantly approves)
-=======
 // POST /api/templates/:id/submit — submit a locally-created template to Meta
->>>>>>> staging
 router.post('/:id/submit', async (req: Request, res: Response) => {
   try {
     const template = await prisma.template.findFirst({
