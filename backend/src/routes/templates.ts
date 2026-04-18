@@ -24,6 +24,121 @@ const templateSchema = z.object({
   ).optional().default([]),
 });
 
+// Map short language codes to Meta locale codes
+const LANGUAGE_MAP: Record<string, string> = {
+  en: 'en_US',
+  id: 'id',
+  es: 'es',
+  pt_BR: 'pt_BR',
+  fr: 'fr',
+  ar: 'ar',
+};
+
+interface MetaSubmitResult {
+  waTemplateId: string | null;
+  status: string;
+  errorMessage?: string;
+}
+
+async function submitToMeta(template: {
+  name: string;
+  category: string;
+  language: string;
+  headerType?: string | null;
+  headerValue?: string | null;
+  body: string;
+  footer?: string | null;
+  buttons: string; // JSON string
+}): Promise<MetaSubmitResult> {
+  const accessToken = process.env.WA_ACCESS_TOKEN;
+  const wabaId = process.env.WA_BUSINESS_ACCOUNT_ID;
+
+  if (!accessToken || !wabaId) {
+    // No credentials — local-only mode
+    return { waTemplateId: null, status: 'pending' };
+  }
+
+  const metaLanguage = LANGUAGE_MAP[template.language] || template.language;
+
+  const components: Array<Record<string, unknown>> = [];
+
+  if (template.headerType) {
+    const format = template.headerType.toUpperCase();
+    const headerComp: Record<string, unknown> = { type: 'HEADER', format };
+    if (format === 'TEXT' && template.headerValue) {
+      headerComp.text = template.headerValue;
+    }
+    components.push(headerComp);
+  }
+
+  components.push({ type: 'BODY', text: template.body });
+
+  if (template.footer) {
+    components.push({ type: 'FOOTER', text: template.footer });
+  }
+
+  let buttons: Array<Record<string, unknown>> = [];
+  try { buttons = JSON.parse(template.buttons) || []; } catch { /* ignore */ }
+
+  if (buttons.length > 0) {
+    components.push({
+      type: 'BUTTONS',
+      buttons: buttons.map((b) => {
+        const btn: Record<string, unknown> = { type: String(b.type).toUpperCase(), text: b.text };
+        if (b.url) btn.url = b.url;
+        if (b.phone_number) btn.phone_number = b.phone_number;
+        return btn;
+      }),
+    });
+  }
+
+  const payload = {
+    name: template.name,
+    language: metaLanguage,
+    category: template.category.toUpperCase(),
+    components,
+  };
+
+  console.log('[Templates] Submitting to Meta:', JSON.stringify(payload, null, 2));
+
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v21.0/${wabaId}/message_templates`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const data = await response.json() as Record<string, unknown>;
+
+    if (!response.ok) {
+      const errMsg = (data.error as Record<string, unknown>)?.message as string || JSON.stringify(data);
+      console.error(`[Templates] Meta rejected template "${template.name}":`, JSON.stringify(data));
+      return { waTemplateId: null, status: 'rejected', errorMessage: errMsg };
+    }
+
+    const waTemplateId = data.id as string | null || null;
+    const metaStatus = (data.status as string || 'PENDING').toUpperCase();
+    const STATUS_MAP: Record<string, string> = { APPROVED: 'approved', REJECTED: 'rejected', PENDING: 'pending' };
+    const status = STATUS_MAP[metaStatus] || 'pending';
+
+    console.log(`[Templates] Meta accepted "${template.name}" → id=${waTemplateId}, status=${metaStatus}`);
+    return { waTemplateId, status };
+  } catch (err) {
+    console.error('[Templates] Meta API exception:', err);
+    return { waTemplateId: null, status: 'pending', errorMessage: String(err) };
+  }
+}
+
+function parseButtons(raw: string) {
+  try { return JSON.parse(raw); } catch { return []; }
+}
+
 // GET /api/templates
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -39,10 +154,7 @@ router.get('/', async (req: Request, res: Response) => {
     });
 
     return res.json({
-      templates: templates.map((t) => ({
-        ...t,
-        buttons: (() => { try { return JSON.parse(t.buttons); } catch { return []; } })(),
-      })),
+      templates: templates.map((t) => ({ ...t, buttons: parseButtons(t.buttons) })),
     });
   } catch (err) {
     console.error('[Templates] List error:', err);
@@ -60,16 +172,15 @@ router.post('/', async (req: Request, res: Response) => {
 
     const { buttons, ...rest } = parsed.data;
 
-    // Check for duplicate name in team
     const existing = await prisma.template.findFirst({
       where: { name: rest.name, teamId: req.user!.teamId },
     });
-
     if (existing) {
       return res.status(409).json({ error: 'A template with this name already exists' });
     }
 
-    const template = await prisma.template.create({
+    // Save locally first
+    let template = await prisma.template.create({
       data: {
         ...rest,
         buttons: JSON.stringify(buttons || []),
@@ -78,11 +189,35 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
 
+    // Submit to Meta (no-op if credentials not set)
+    const metaResult = await submitToMeta({
+      name: template.name,
+      category: template.category,
+      language: template.language,
+      headerType: template.headerType,
+      headerValue: template.headerValue,
+      body: template.body,
+      footer: template.footer,
+      buttons: template.buttons,
+    });
+
+    if (metaResult.waTemplateId || metaResult.status !== 'pending' || metaResult.errorMessage) {
+      template = await prisma.template.update({
+        where: { id: template.id },
+        data: {
+          status: metaResult.status,
+          waTemplateId: metaResult.waTemplateId || undefined,
+        },
+      });
+    }
+
+    const submittedToMeta = !!(process.env.WA_ACCESS_TOKEN && process.env.WA_BUSINESS_ACCOUNT_ID);
+
     return res.status(201).json({
-      template: {
-        ...template,
-        buttons: (() => { try { return JSON.parse(template.buttons); } catch { return []; } })(),
-      },
+      template: { ...template, buttons: parseButtons(template.buttons) },
+      submittedToMeta,
+      metaStatus: metaResult.status,
+      metaError: metaResult.errorMessage,
     });
   } catch (err) {
     console.error('[Templates] Create error:', err);
@@ -101,12 +236,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    return res.json({
-      template: {
-        ...template,
-        buttons: (() => { try { return JSON.parse(template.buttons); } catch { return []; } })(),
-      },
-    });
+    return res.json({ template: { ...template, buttons: parseButtons(template.buttons) } });
   } catch (err) {
     console.error('[Templates] Get error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -142,15 +272,10 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
     const updated = await prisma.template.update({
       where: { id: req.params.id },
-      data: { ...updateData, status: 'pending' }, // Reset to pending on edit
+      data: { ...updateData, status: 'pending' },
     });
 
-    return res.json({
-      template: {
-        ...updated,
-        buttons: (() => { try { return JSON.parse(updated.buttons); } catch { return []; } })(),
-      },
-    });
+    return res.json({ template: { ...updated, buttons: parseButtons(updated.buttons) } });
   } catch (err) {
     console.error('[Templates] Update error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -168,6 +293,29 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Template not found' });
     }
 
+    // Delete from Meta if we have credentials and the template was submitted
+    const accessToken = process.env.WA_ACCESS_TOKEN;
+    const wabaId = process.env.WA_BUSINESS_ACCOUNT_ID;
+
+    if (accessToken && wabaId && template.waTemplateId) {
+      try {
+        const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?name=${encodeURIComponent(template.name)}`;
+        const metaRes = await fetch(url, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!metaRes.ok) {
+          const errBody = await metaRes.json().catch(() => ({}));
+          console.warn(`[Templates] Meta delete warning for "${template.name}":`, errBody);
+          // Continue with local deletion even if Meta delete fails
+        } else {
+          console.log(`[Templates] Deleted "${template.name}" from Meta`);
+        }
+      } catch (err) {
+        console.warn('[Templates] Meta delete exception (continuing with local delete):', err);
+      }
+    }
+
     await prisma.template.delete({ where: { id: req.params.id } });
 
     return res.json({ message: 'Template deleted successfully' });
@@ -177,7 +325,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+<<<<<<< HEAD
 // POST /api/templates/sync — pull approved templates from Meta and upsert locally
+=======
+// POST /api/templates/sync — pull templates from Meta and upsert locally
+>>>>>>> staging
 router.post('/sync', async (req: Request, res: Response) => {
   try {
     const accessToken = process.env.WA_ACCESS_TOKEN;
@@ -189,14 +341,22 @@ router.post('/sync', async (req: Request, res: Response) => {
       });
     }
 
+<<<<<<< HEAD
     const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?limit=100&fields=name,status,category,language,components`;
+=======
+    const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?limit=100&fields=id,name,status,category,language,components`;
+>>>>>>> staging
     const metaRes = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!metaRes.ok) {
       const errBody = await metaRes.json().catch(() => ({}));
+<<<<<<< HEAD
       console.error('[Templates] Meta API error:', errBody);
+=======
+      console.error('[Templates] Meta API error during sync:', errBody);
+>>>>>>> staging
       return res.status(502).json({ error: 'Meta API request failed', details: errBody });
     }
 
@@ -207,6 +367,10 @@ router.post('/sync', async (req: Request, res: Response) => {
       buttons?: Array<{ type: string; text: string; url?: string; phone_number?: string }>;
     };
     type MetaTemplate = {
+<<<<<<< HEAD
+=======
+      id: string;
+>>>>>>> staging
       name: string;
       status: string;
       category: string;
@@ -222,7 +386,11 @@ router.post('/sync', async (req: Request, res: Response) => {
 
     for (const t of metaTemplates) {
       const bodyComp = t.components.find((c) => c.type === 'BODY');
+<<<<<<< HEAD
       if (!bodyComp?.text) continue; // skip templates with no body
+=======
+      if (!bodyComp?.text) continue;
+>>>>>>> staging
 
       const headerComp = t.components.find((c) => c.type === 'HEADER');
       const footerComp = t.components.find((c) => c.type === 'FOOTER');
@@ -238,13 +406,18 @@ router.post('/sync', async (req: Request, res: Response) => {
         ...(b.phone_number ? { phone_number: b.phone_number } : {}),
       }));
 
+<<<<<<< HEAD
       const statusMap: Record<string, string> = {
+=======
+      const STATUS_MAP: Record<string, string> = {
+>>>>>>> staging
         APPROVED: 'approved',
         REJECTED: 'rejected',
         PENDING: 'pending',
         PAUSED: 'pending',
         DISABLED: 'rejected',
       };
+<<<<<<< HEAD
       const status = statusMap[t.status.toUpperCase()] ?? 'pending';
 
       const validCategories = ['MARKETING', 'UTILITY', 'AUTHENTICATION'];
@@ -255,6 +428,14 @@ router.post('/sync', async (req: Request, res: Response) => {
       const existing = await prisma.template.findFirst({
         where: { name: t.name, teamId },
       });
+=======
+      const status = STATUS_MAP[t.status.toUpperCase()] ?? 'pending';
+
+      const validCategories = ['MARKETING', 'UTILITY', 'AUTHENTICATION'];
+      const category = validCategories.includes(t.category.toUpperCase()) ? t.category.toUpperCase() : 'UTILITY';
+
+      const existing = await prisma.template.findFirst({ where: { name: t.name, teamId } });
+>>>>>>> staging
 
       if (existing) {
         await prisma.template.update({
@@ -268,6 +449,10 @@ router.post('/sync', async (req: Request, res: Response) => {
             headerValue,
             footer,
             buttons: JSON.stringify(buttons),
+<<<<<<< HEAD
+=======
+            waTemplateId: t.id,
+>>>>>>> staging
           },
         });
       } else {
@@ -282,7 +467,11 @@ router.post('/sync', async (req: Request, res: Response) => {
             footer,
             buttons: JSON.stringify(buttons),
             status,
+<<<<<<< HEAD
             waTemplateId: t.name,
+=======
+            waTemplateId: t.id,
+>>>>>>> staging
             teamId,
           },
         });
@@ -298,8 +487,12 @@ router.post('/sync', async (req: Request, res: Response) => {
   }
 });
 
+<<<<<<< HEAD
 // POST /api/templates/:id/submit
 // Submit template to WhatsApp for approval (mock: instantly approves)
+=======
+// POST /api/templates/:id/submit — submit a locally-created template to Meta
+>>>>>>> staging
 router.post('/:id/submit', async (req: Request, res: Response) => {
   try {
     const template = await prisma.template.findFirst({
@@ -314,24 +507,35 @@ router.post('/:id/submit', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Template is already approved' });
     }
 
-    const mockWaTemplateId = `wa_tmpl_${Date.now()}`;
+    const metaResult = await submitToMeta({
+      name: template.name,
+      category: template.category,
+      language: template.language,
+      headerType: template.headerType,
+      headerValue: template.headerValue,
+      body: template.body,
+      footer: template.footer,
+      buttons: template.buttons,
+    });
 
     const updated = await prisma.template.update({
       where: { id: req.params.id },
       data: {
-        status: 'approved',
-        waTemplateId: mockWaTemplateId,
+        status: metaResult.status,
+        waTemplateId: metaResult.waTemplateId || undefined,
       },
     });
 
-    console.log(`[Templates] Mock submission - Template "${template.name}" approved with WA ID: ${mockWaTemplateId}`);
+    const submittedToMeta = !!(process.env.WA_ACCESS_TOKEN && process.env.WA_BUSINESS_ACCOUNT_ID);
 
     return res.json({
-      template: {
-        ...updated,
-        buttons: (() => { try { return JSON.parse(updated.buttons); } catch { return []; } })(),
-      },
-      message: 'Template submitted and approved (mock mode)',
+      template: { ...updated, buttons: parseButtons(updated.buttons) },
+      submittedToMeta,
+      metaStatus: metaResult.status,
+      metaError: metaResult.errorMessage,
+      message: submittedToMeta
+        ? 'Template submitted to WhatsApp for approval'
+        : 'Template marked as pending (no WhatsApp credentials configured)',
     });
   } catch (err) {
     console.error('[Templates] Submit error:', err);
